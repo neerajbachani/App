@@ -49,6 +49,8 @@ function init() {
                 if (connectionsEstablishedCount === totalConnections) {
                     areAllConnectionsSet = true;
                     Log.info(`[OnyxDerived] All connections initialized for key: ${key}`);
+                    // DIAGNOSTIC LOG — remove before submitting PR
+                    console.error(`[DEBUG #79389] areAllConnectionsSet => TRUE for key=${key}`);
                 }
             };
 
@@ -103,6 +105,8 @@ function init() {
                         key: ONYXKEYS.ARE_TRANSLATIONS_LOADING,
                         initWithStoredValues: false,
                         callback: (value) => {
+                            // DIAGNOSTIC LOG — remove before submitting PR
+                            console.error(`[DEBUG #79389] ARE_TRANSLATIONS_LOADING fired for key=${key}, value=${JSON.stringify(value)}, areAllConnectionsSet=${areAllConnectionsSet}, connectionsEstablishedCount=${connectionsEstablishedCount}/${totalConnections}`);
                             if (value ?? true) {
                                 Log.info(`[OnyxDerived] translations are still loading, not recomputing derived value for ${key}`);
                                 return;
@@ -116,6 +120,8 @@ function init() {
                             Log.info(`[OnyxDerived] dependency ${dependencyOnyxKey} for derived key ${key} changed, recomputing`);
                             setDependencyValue(dependencyIndex, localeValue as Parameters<typeof compute>[0][typeof dependencyIndex]);
                             recomputeDerivedValue(dependencyOnyxKey, localeValue, dependencyIndex);
+                            // DIAGNOSTIC LOG — remove before submitting PR
+                            console.error(`[DEBUG #79389] After locale recompute: areAllConnectionsSet=${areAllConnectionsSet}`);
                         },
                     });
                 } else {

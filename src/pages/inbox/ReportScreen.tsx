@@ -352,6 +352,23 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
     const lastReportAction = [...combinedReportActions, parentReportAction].find((action) => canEditReportAction(action) && !isMoneyRequestAction(action));
     const isTopMostReportId = currentReportIDValue === reportIDFromRoute;
     const didSubscribeToReportLeavingEvents = useRef(false);
+
+    // Track whether the report for the current route is an own policy expense chat (workspace chat).
+    // We use a ref updated synchronously during render (not in a useEffect) because by the time
+    // the reportWasDeleted effect fires (render N+2), usePrevious has already cleared prevReport
+    // to undefined. A ref set during render persists correctly through all render cycles.
+    // See issue #84248.
+    const isCurrentRouteOwnWorkspaceChatRef = useRef(false);
+    if (report?.reportID && report.reportID === reportIDFromRoute) {
+        // We have a valid, matching report — update the ref
+        isCurrentRouteOwnWorkspaceChatRef.current = !!report.isOwnPolicyExpenseChat;
+    } else if (!report?.reportID) {
+        // Report was wiped (Onyx SET cleared it) — intentionally keep the last known value
+        // so the reportWasDeleted effect can still read it.
+    } else {
+        // Different report loaded — reset
+        isCurrentRouteOwnWorkspaceChatRef.current = false;
+    }
     const isTransactionThreadView = isReportTransactionThread(report);
     const isMoneyRequestOrInvoiceReport = isMoneyRequestReport(report) || isInvoiceReport(report);
     // Prevent the empty state flash by ensuring transaction data is fully loaded before deciding which view to render
@@ -480,7 +497,9 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
     const shouldShowNotFoundPage = useMemo((): boolean => {
         const isInvalidReportPath = !!currentReportIDFormRoute && !isValidReportIDFromPath(currentReportIDFormRoute);
         const isLoading = isLoadingApp !== false || isLoadingReportData || (!isOffline && !!reportMetadata?.isLoadingInitialReportActions);
-        const reportExists = !!reportID || (!isDeletedTransactionThread && isOptimisticDelete) || userLeavingStatus;
+        // Also treat an own workspace chat as "existing" even when its Onyx entry is temporarily
+        // wiped by a delegate action (see issue #84248). The ref persists through the wipe.
+        const reportExists = !!reportID || (!isDeletedTransactionThread && isOptimisticDelete) || userLeavingStatus || isCurrentRouteOwnWorkspaceChatRef.current;
 
         if (shouldShowNotFoundLinkedAction) {
             return true;
@@ -734,6 +753,23 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
         fetchReport();
     }, [prevReportActions.length, reportActions, fetchReport]);
 
+    // When a vacation delegate splits an expense, the server sends a Onyx SET that temporarily
+    // clears the workspace chat from Onyx (see issue #84248). We block navigation away (Effect 2),
+    // but without an explicit re-fetch the report data stays wiped and shows a loading skeleton.
+    // This effect detects the wipe on own workspace chats and calls fetchReport to restore the data.
+    const prevReportID = usePrevious(report?.reportID);
+    useEffect(() => {
+        const wasJustWiped = !!prevReportID && prevReportID === reportIDFromRoute && !report?.reportID;
+        if (!wasJustWiped) {
+            return;
+        }
+        if (!isCurrentRouteOwnWorkspaceChatRef.current) {
+            return;
+        }
+        fetchReport();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [report?.reportID, prevReportID, reportIDFromRoute]);
+
     // If a user has chosen to leave a thread, and then returns to it (e.g. with the back button), we need to call `openReport` again in order to allow the user to rejoin and to receive real-time updates
     useEffect(() => {
         if (!shouldUseNarrowLayout || !isFocused || prevIsFocused || !isChatThread(report) || !isHiddenForCurrentUser(report) || isTransactionThreadView) {
@@ -760,7 +796,10 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
             isEmpty(report) &&
             (isMoneyRequest(prevReport) ||
                 isMoneyRequestReport(prevReport) ||
-                isPolicyExpenseChat(prevReport) ||
+                // Exclude own policy expense chats (workspace chats) — a vacation delegate
+                // splitting an expense causes a temporary server SET that clears the report
+                // in Onyx, but the chat was never intentionally removed. See issue #84248.
+                (isPolicyExpenseChat(prevReport) && !prevReport?.isOwnPolicyExpenseChat) ||
                 isGroupChat(prevReport) ||
                 isAdminRoom(prevReport) ||
                 isAnnounceRoom(prevReport));
@@ -853,6 +892,25 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
             return;
         }
 
+        // Do not navigate away from own policy expense chats (workspace chats).
+        // Server Onyx updates from a delegate action can temporarily empty the report object,
+        // but the chat was never intentionally removed. See issue #84248.
+        // NOTE: we use a ref (not prevReport) because by this render cycle usePrevious has
+        // already updated prevReport to undefined. The ref is set synchronously during render
+        // and persists reliably through all render cycles.
+        if (isCurrentRouteOwnWorkspaceChatRef.current) {
+            return;
+        }
+
+        // Clean up the navigation stack before navigating away, to prevent an infinite loop
+        // where pressing back returns to the "deleted" report URL and re-triggers this effect.
+        Navigation.dismissModal();
+        if (Navigation.getTopmostReportId() === reportIDFromRoute) {
+            Navigation.isNavigationReady().then(() => {
+                Navigation.popToSidebar();
+            });
+        }
+
         // Try to navigate to parent report if available
         if (deletedReportParentID && !isMoneyRequestReportPendingDeletion(deletedReportParentID)) {
             Navigation.isNavigationReady().then(() => {
@@ -865,7 +923,7 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
         Navigation.isNavigationReady().then(() => {
             navigateToConciergeChat(conciergeReportID, introSelected, currentUserAccountID, isSelfTourViewed);
         });
-    }, [reportWasDeleted, isFocused, deletedReportParentID, conciergeReportID, introSelected, currentUserAccountID, isSelfTourViewed]);
+    }, [reportWasDeleted, isFocused, deletedReportParentID, conciergeReportID, introSelected, currentUserAccountID, reportIDFromRoute]);
 
     useEffect(() => {
         if (!isValidReportIDFromPath(reportIDFromRoute)) {
