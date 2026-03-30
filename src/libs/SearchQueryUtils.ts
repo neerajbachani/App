@@ -42,7 +42,7 @@ import {validateAmount} from './MoneyRequestUtils';
 import {getPreservedNavigatorState} from './Navigation/AppNavigator/createSplitNavigator/usePreserveNavigatorState';
 import navigationRef from './Navigation/navigationRef';
 import type {SearchFullscreenNavigatorParamList} from './Navigation/types';
-import {getDisplayNameOrDefault, getPersonalDetailByEmail} from './PersonalDetailsUtils';
+import {getDisplayNameOrDefault, getPersonalDetailByDisplayName, getPersonalDetailByEmail} from './PersonalDetailsUtils';
 import {getCleanedTagName} from './PolicyUtils';
 import {getReportName} from './ReportNameUtils';
 import {parse as parseSearchQuery} from './SearchParser/searchParser';
@@ -284,7 +284,12 @@ function getFilters(queryJSON: SearchQueryJSON) {
  * - for `AMOUNT` it formats value to "backend" amount
  * - for personal filters it tries to substitute any user emails with accountIDs
  */
-function getUpdatedFilterValue(filterName: ValueOf<typeof CONST.SEARCH.SYNTAX_FILTER_KEYS>, filterValue: string | string[], shouldSkipAmountConversion = false) {
+function getUpdatedFilterValue(
+    filterName: ValueOf<typeof CONST.SEARCH.SYNTAX_FILTER_KEYS>,
+    filterValue: string | string[],
+    shouldSkipAmountConversion = false,
+    currentUserAccountID?: number,
+) {
     if (AMOUNT_FILTER_KEYS.includes(filterName as SearchAmountFilterKeys)) {
         if (shouldSkipAmountConversion) {
             return filterValue;
@@ -302,15 +307,37 @@ function getUpdatedFilterValue(filterName: ValueOf<typeof CONST.SEARCH.SYNTAX_FI
     if (
         filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.FROM ||
         filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.TO ||
+        filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.ASSIGNEE ||
         filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.PAYER ||
         filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.EXPORTER ||
         filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.ATTENDEE
     ) {
+        // Resolve the special 'me' alias to the current user's accountID.
+        // getPersonalDetailByEmail('me') always returns undefined because 'me' is not
+        // a real email address, so we short-circuit here when currentUserAccountID is known.
+        const resolveValue = (value: string): string => {
+            if (value === CONST.SEARCH.ME && currentUserAccountID) {
+                return String(currentUserAccountID);
+            }
+            // Try email lookup first (the common case when value is a login address)
+            const byEmail = getPersonalDetailByEmail(value);
+            if (byEmail) {
+                return String(byEmail.accountID);
+            }
+            // Fall back to display-name lookup so that queries typed as 'from:Neeraj C'
+            // resolve correctly, mirroring the substitution-map path used by the dropdown.
+            const byDisplayName = getPersonalDetailByDisplayName(value);
+            if (byDisplayName) {
+                return String(byDisplayName.accountID);
+            }
+            return value;
+        };
+
         if (typeof filterValue === 'string') {
-            return getPersonalDetailByEmail(filterValue)?.accountID.toString() ?? filterValue;
+            return resolveValue(filterValue);
         }
 
-        return filterValue.map((email) => getPersonalDetailByEmail(email)?.accountID.toString() ?? email);
+        return filterValue.map(resolveValue);
     }
 
     if (filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.REPORT_ID || filterName === CONST.SEARCH.SYNTAX_FILTER_KEYS.WITHDRAWAL_ID) {
@@ -1566,7 +1593,7 @@ function traverseAndUpdatedQuery(queryJSON: SearchQueryJSON, computeNodeValue: (
  * Returns new string query, after parsing it and traversing to update some filter values.
  * If there are any personal emails, it will try to substitute them with accountIDs
  */
-function getQueryWithUpdatedValues(query: string, shouldSkipAmountConversion = false) {
+function getQueryWithUpdatedValues(query: string, shouldSkipAmountConversion = false, currentUserAccountID?: number) {
     const queryJSON = buildSearchQueryJSON(query);
 
     if (!queryJSON) {
@@ -1574,7 +1601,8 @@ function getQueryWithUpdatedValues(query: string, shouldSkipAmountConversion = f
         return;
     }
 
-    const computeNodeValue = (left: ValueOf<typeof CONST.SEARCH.SYNTAX_FILTER_KEYS>, right: string | string[]) => getUpdatedFilterValue(left, right, shouldSkipAmountConversion);
+    const computeNodeValue = (left: ValueOf<typeof CONST.SEARCH.SYNTAX_FILTER_KEYS>, right: string | string[]) =>
+        getUpdatedFilterValue(left, right, shouldSkipAmountConversion, currentUserAccountID);
     const standardizedQuery = traverseAndUpdatedQuery(queryJSON, computeNodeValue);
     return buildSearchQueryString(standardizedQuery);
 }
