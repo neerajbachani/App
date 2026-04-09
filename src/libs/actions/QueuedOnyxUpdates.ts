@@ -3,6 +3,7 @@ import Onyx from 'react-native-onyx';
 import CONFIG from '@src/CONFIG';
 import ONYXKEYS from '@src/ONYXKEYS';
 import type {AnyOnyxUpdate} from '@src/types/onyx/Request';
+import type Session from '@src/types/onyx/Session';
 
 // In this file we manage a queue of Onyx updates while the SequentialQueue is processing. There are functions to get the updates and clear the queue after saving the updates in Onyx.
 
@@ -33,26 +34,32 @@ function flushQueue(): Promise<void> {
     queuedOnyxUpdates = [];
 
     if (!currentAccountID && !CONFIG.IS_TEST_ENV) {
-        const preservedKeys = new Set<OnyxKey>([
-            ONYXKEYS.NVP_TRY_NEW_DOT,
-            ONYXKEYS.NVP_TRY_FOCUS_MODE,
-            ONYXKEYS.PREFERRED_THEME,
-            ONYXKEYS.NVP_PREFERRED_LOCALE,
-            ONYXKEYS.ARE_TRANSLATIONS_LOADING,
-            ONYXKEYS.SESSION,
-            ONYXKEYS.IS_LOADING_APP,
-            ONYXKEYS.HAS_LOADED_APP,
-            ONYXKEYS.CREDENTIALS,
-            ONYXKEYS.IS_SIDEBAR_LOADED,
-            ONYXKEYS.ACCOUNT,
-            ONYXKEYS.IS_CHECKING_PUBLIC_ROOM,
-            ONYXKEYS.MODAL,
-            ONYXKEYS.NETWORK,
-            ONYXKEYS.SHOULD_SHOW_COMPOSE_INPUT,
-            ONYXKEYS.PRESERVED_USER_SESSION,
-        ]);
+        // If this batch itself is establishing a new session (e.g. an anonymous session created for a public room deeplink),
+        // the data is fresh and belongs to that session — allow it all through with no risk of cross-account leakage.
+        // Otherwise, filter to prevent stale data from a previous account polluting a new session (see #48427).
+        const queuedAccountID = (copyUpdates.find((update) => update.key === ONYXKEYS.SESSION)?.value as Session | null | undefined)?.accountID;
+        if (!queuedAccountID) {
+            const preservedKeys = new Set<OnyxKey>([
+                ONYXKEYS.NVP_TRY_NEW_DOT,
+                ONYXKEYS.NVP_TRY_FOCUS_MODE,
+                ONYXKEYS.PREFERRED_THEME,
+                ONYXKEYS.NVP_PREFERRED_LOCALE,
+                ONYXKEYS.ARE_TRANSLATIONS_LOADING,
+                ONYXKEYS.SESSION,
+                ONYXKEYS.IS_LOADING_APP,
+                ONYXKEYS.HAS_LOADED_APP,
+                ONYXKEYS.CREDENTIALS,
+                ONYXKEYS.IS_SIDEBAR_LOADED,
+                ONYXKEYS.ACCOUNT,
+                ONYXKEYS.IS_CHECKING_PUBLIC_ROOM,
+                ONYXKEYS.MODAL,
+                ONYXKEYS.NETWORK,
+                ONYXKEYS.SHOULD_SHOW_COMPOSE_INPUT,
+                ONYXKEYS.PRESERVED_USER_SESSION,
+            ]);
 
-        copyUpdates = copyUpdates.filter((update) => preservedKeys.has(update.key as OnyxKey));
+            copyUpdates = copyUpdates.filter((update) => preservedKeys.has(update.key as OnyxKey));
+        }
     }
     return Onyx.update(copyUpdates);
 }
