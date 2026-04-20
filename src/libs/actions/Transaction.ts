@@ -856,6 +856,7 @@ function changeTransactionsReport({
     allTransactions,
 }: ChangeTransactionsReportProps) {
     const reportID = newReport?.reportID ?? CONST.REPORT.UNREPORTED_REPORT_ID;
+    const sourceReportStateStatusPairs = new Set<string>();
 
     const transactions = transactionIDs.map((id) => allTransactions?.[`${ONYXKEYS.COLLECTION.TRANSACTION}${id}`]).filter((t): t is NonNullable<typeof t> => t !== undefined);
     const transactionIDToReportActionAndThreadData: Record<string, TransactionThreadInfo> = {};
@@ -1015,6 +1016,9 @@ function changeTransactionsReport({
 
         const oldReportID = isUnreportedExpense ? CONST.REPORT.UNREPORTED_REPORT_ID : transaction.reportID;
         const oldReport = allReports?.[`${ONYXKEYS.COLLECTION.REPORT}${oldReportID}`];
+        if (oldReport?.stateNum !== undefined && oldReport?.statusNum !== undefined) {
+            sourceReportStateStatusPairs.add(`${oldReport.stateNum}:${oldReport.statusNum}`);
+        }
         const sourceCurrency = oldReport?.currency;
         const shouldClearAmount = shouldClearConvertedAmount(transaction, sourceCurrency, destinationCurrency);
 
@@ -1536,6 +1540,10 @@ function changeTransactionsReport({
 
     // 9. Update next steps for all affected reports
     const destinationReportID = reportID === CONST.REPORT.UNREPORTED_REPORT_ID ? (existingSelfDMReportID ?? selfDMReport?.reportID) : reportID;
+    const shouldInheritLifecycleStateFromSource = destinationReportID === newReport?.reportID && !!newReport?.pendingFields?.createReport && sourceReportStateStatusPairs.size === 1;
+    const inheritedStateAndStatus = shouldInheritLifecycleStateFromSource ? [...sourceReportStateStatusPairs][0]?.split(':').map(Number) : undefined;
+    const inheritedDestinationStateNum = inheritedStateAndStatus?.[0];
+    const inheritedDestinationStatusNum = inheritedStateAndStatus?.[1];
     const affectedReportIDs = new Set<string>();
 
     for (const reportIDToUpdate of Object.keys(updatedReportTotals)) {
@@ -1558,11 +1566,18 @@ function changeTransactionsReport({
 
         const updatedTotal = updatedReportTotals[affectedReportID] ?? affectedReport.total;
         const updatedTransactionCount = updatedReportTransactionCounts[affectedReportID] ?? affectedReport.transactionCount;
+        const shouldApplyInheritedLifecycleState = affectedReportID === destinationReportID && inheritedDestinationStateNum !== undefined && inheritedDestinationStatusNum !== undefined;
         const updatedReport = {
             ...affectedReport,
             total: updatedTotal,
             transactionCount: updatedTransactionCount,
             reportID: affectedReport.reportID ?? affectedReportID,
+            ...(shouldApplyInheritedLifecycleState
+                ? {
+                      stateNum: inheritedDestinationStateNum,
+                      statusNum: inheritedDestinationStatusNum,
+                  }
+                : {}),
         };
 
         const predictedNextStatus = updatedReport.statusNum ?? CONST.REPORT.STATUS_NUM.OPEN;
@@ -1604,6 +1619,12 @@ function changeTransactionsReport({
             onyxMethod: Onyx.METHOD.MERGE,
             key: `${ONYXKEYS.COLLECTION.REPORT}${affectedReportID}`,
             value: {
+                ...(shouldApplyInheritedLifecycleState
+                    ? {
+                          stateNum: inheritedDestinationStateNum,
+                          statusNum: inheritedDestinationStatusNum,
+                      }
+                    : {}),
                 nextStep: optimisticNextStepForReport,
                 pendingFields: {
                     nextStep: CONST.RED_BRICK_ROAD_PENDING_ACTION.UPDATE,
@@ -1628,6 +1649,12 @@ function changeTransactionsReport({
             onyxMethod: Onyx.METHOD.MERGE,
             key: `${ONYXKEYS.COLLECTION.REPORT}${affectedReportID}`,
             value: {
+                ...(shouldApplyInheritedLifecycleState
+                    ? {
+                          stateNum: affectedReport.stateNum,
+                          statusNum: affectedReport.statusNum,
+                      }
+                    : {}),
                 nextStep: affectedReport.nextStep ?? null,
                 pendingFields: {
                     nextStep: null,
