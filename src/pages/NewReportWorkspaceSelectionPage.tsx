@@ -61,6 +61,7 @@ function NewReportWorkspaceSelectionPage({route}: NewReportWorkspaceSelectionPag
     const {translate, localeCompare} = useLocalize();
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const [allReportNextSteps] = useOnyx(ONYXKEYS.COLLECTION.NEXT_STEP);
+    const [allReports] = useOnyx(ONYXKEYS.COLLECTION.REPORT);
     const isRHPOnReportInSearch = isRHPOnSearchMoneyRequestReportPage();
     const [transactionViolations] = useOnyx(ONYXKEYS.COLLECTION.TRANSACTION_VIOLATIONS);
     const {isBetaEnabled} = usePermissions();
@@ -118,6 +119,21 @@ function NewReportWorkspaceSelectionPage({route}: NewReportWorkspaceSelectionPag
             shouldDismissEmptyReportsConfirmation,
         );
         const selectedTransactionsKeys = Object.keys(selectedTransactions);
+        const sourceReportIDs = new Set<string>();
+        for (const transactionKey of selectedTransactionsKeys) {
+            const sourceReportID = selectedTransactions[transactionKey]?.reportID;
+            if (sourceReportID && sourceReportID !== CONST.REPORT.UNREPORTED_REPORT_ID) {
+                sourceReportIDs.add(sourceReportID);
+            }
+        }
+        for (const transactionID of selectedTransactionIDs) {
+            const sourceReportID = allTransactions?.[`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionID}`]?.reportID;
+            if (sourceReportID && sourceReportID !== CONST.REPORT.UNREPORTED_REPORT_ID) {
+                sourceReportIDs.add(sourceReportID);
+            }
+        }
+        const originalReportID = sourceReportIDs.size === 1 ? [...sourceReportIDs][0] : undefined;
+        const originalReport = originalReportID ? allReports?.[`${ONYXKEYS.COLLECTION.REPORT}${originalReportID}`] : undefined;
 
         if (isMovingExpenses && (!!selectedTransactionsKeys.length || !!selectedTransactionIDs.length)) {
             const reportNextStep = allReportNextSteps?.[`${ONYXKEYS.COLLECTION.NEXT_STEP}${optimisticReport.reportID}`];
@@ -128,6 +144,7 @@ function NewReportWorkspaceSelectionPage({route}: NewReportWorkspaceSelectionPag
                     accountID: currentUserPersonalDetails?.accountID ?? CONST.DEFAULT_NUMBER_ID,
                     email: currentUserPersonalDetails?.email ?? '',
                     newReport: optimisticReport,
+                    originalReport,
                     policy: policies?.[`${ONYXKEYS.COLLECTION.POLICY}${policyID}`],
                     reportNextStep,
                     policyCategories: undefined,

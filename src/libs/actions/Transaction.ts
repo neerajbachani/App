@@ -838,6 +838,7 @@ type ChangeTransactionsReportProps = {
     accountID: number;
     email: string;
     newReport?: OnyxEntry<Report>;
+    originalReport?: OnyxEntry<Report>;
     policy: OnyxEntry<Policy>;
     reportNextStep?: OnyxEntry<ReportNextStepDeprecated>;
     policyCategories?: OnyxEntry<PolicyCategories>;
@@ -850,13 +851,13 @@ function changeTransactionsReport({
     accountID,
     email,
     newReport,
+    originalReport,
     policy,
     reportNextStep,
     policyCategories,
     allTransactions,
 }: ChangeTransactionsReportProps) {
     const reportID = newReport?.reportID ?? CONST.REPORT.UNREPORTED_REPORT_ID;
-    const sourceReportStateStatusPairs = new Set<string>();
 
     const transactions = transactionIDs.map((id) => allTransactions?.[`${ONYXKEYS.COLLECTION.TRANSACTION}${id}`]).filter((t): t is NonNullable<typeof t> => t !== undefined);
     const transactionIDToReportActionAndThreadData: Record<string, TransactionThreadInfo> = {};
@@ -1016,9 +1017,6 @@ function changeTransactionsReport({
 
         const oldReportID = isUnreportedExpense ? CONST.REPORT.UNREPORTED_REPORT_ID : transaction.reportID;
         const oldReport = allReports?.[`${ONYXKEYS.COLLECTION.REPORT}${oldReportID}`];
-        if (oldReport?.stateNum !== undefined && oldReport?.statusNum !== undefined) {
-            sourceReportStateStatusPairs.add(`${oldReport.stateNum}:${oldReport.statusNum}`);
-        }
         const sourceCurrency = oldReport?.currency;
         const shouldClearAmount = shouldClearConvertedAmount(transaction, sourceCurrency, destinationCurrency);
 
@@ -1540,10 +1538,10 @@ function changeTransactionsReport({
 
     // 9. Update next steps for all affected reports
     const destinationReportID = reportID === CONST.REPORT.UNREPORTED_REPORT_ID ? (existingSelfDMReportID ?? selfDMReport?.reportID) : reportID;
-    const shouldInheritLifecycleStateFromSource = destinationReportID === newReport?.reportID && !!newReport?.pendingFields?.createReport && sourceReportStateStatusPairs.size === 1;
-    const inheritedStateAndStatus = shouldInheritLifecycleStateFromSource ? [...sourceReportStateStatusPairs][0]?.split(':').map(Number) : undefined;
-    const inheritedDestinationStateNum = inheritedStateAndStatus?.[0];
-    const inheritedDestinationStatusNum = inheritedStateAndStatus?.[1];
+    const shouldInheritLifecycleStateFromSource =
+        destinationReportID === newReport?.reportID && !!newReport?.pendingFields?.createReport && originalReport?.stateNum !== undefined && originalReport?.statusNum !== undefined;
+    const inheritedDestinationStateNum = shouldInheritLifecycleStateFromSource ? originalReport.stateNum : undefined;
+    const inheritedDestinationStatusNum = shouldInheritLifecycleStateFromSource ? originalReport.statusNum : undefined;
     const affectedReportIDs = new Set<string>();
 
     for (const reportIDToUpdate of Object.keys(updatedReportTotals)) {
@@ -1664,6 +1662,14 @@ function changeTransactionsReport({
                 statusNum: inheritedDestinationStatusNum,
             },
         });
+        successData.push({
+            onyxMethod: Onyx.METHOD.MERGE,
+            key: `${ONYXKEYS.COLLECTION.REPORT}${destinationReportID}`,
+            value: {
+                stateNum: inheritedDestinationStateNum,
+                statusNum: inheritedDestinationStatusNum,
+            },
+        });
         failureData.push({
             onyxMethod: Onyx.METHOD.MERGE,
             key: `${ONYXKEYS.COLLECTION.REPORT}${destinationReportID}`,
@@ -1672,6 +1678,41 @@ function changeTransactionsReport({
                 statusNum: newReport?.statusNum ?? CONST.REPORT.STATUS_NUM.OPEN,
             },
         });
+
+        if (newReport?.parentReportID && newReport?.parentReportActionID) {
+            const parentReportAction = getAllReportActions(newReport.parentReportID)?.[newReport.parentReportActionID];
+
+            optimisticData.push({
+                onyxMethod: Onyx.METHOD.MERGE,
+                key: `${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${newReport.parentReportID}`,
+                value: {
+                    [newReport.parentReportActionID]: {
+                        childStateNum: inheritedDestinationStateNum,
+                        childStatusNum: inheritedDestinationStatusNum,
+                    },
+                },
+            });
+            successData.push({
+                onyxMethod: Onyx.METHOD.MERGE,
+                key: `${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${newReport.parentReportID}`,
+                value: {
+                    [newReport.parentReportActionID]: {
+                        childStateNum: inheritedDestinationStateNum,
+                        childStatusNum: inheritedDestinationStatusNum,
+                    },
+                },
+            });
+            failureData.push({
+                onyxMethod: Onyx.METHOD.MERGE,
+                key: `${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${newReport.parentReportID}`,
+                value: {
+                    [newReport.parentReportActionID]: {
+                        childStateNum: parentReportAction?.childStateNum ?? newReport.stateNum ?? CONST.REPORT.STATE_NUM.OPEN,
+                        childStatusNum: parentReportAction?.childStatusNum ?? newReport.statusNum ?? CONST.REPORT.STATUS_NUM.OPEN,
+                    },
+                },
+            });
+        }
     }
 
     const parameters: ChangeTransactionsReportParams = {

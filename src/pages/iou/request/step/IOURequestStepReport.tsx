@@ -174,12 +174,14 @@ function IOURequestStepReport({route, transaction}: IOURequestStepReportProps) {
                 );
 
                 if (isEditing) {
+                    const originalReport = transaction.reportID ? allReports?.[`${ONYXKEYS.COLLECTION.REPORT}${transaction.reportID}`] : undefined;
                     changeTransactionsReport({
                         transactionIDs: [transaction.transactionID],
                         isASAPSubmitBetaEnabled,
                         accountID: session?.accountID ?? CONST.DEFAULT_NUMBER_ID,
                         email: session?.email ?? '',
                         newReport: report,
+                        originalReport,
                         policy: allPolicies?.[`${ONYXKEYS.COLLECTION.POLICY}${item.policyID}`],
                         reportNextStep: undefined,
                         policyCategories: allPolicyCategories?.[`${ONYXKEYS.COLLECTION.POLICY_CATEGORIES}${item.policyID}`],
