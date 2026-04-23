@@ -74,18 +74,17 @@ const PromotedActions = {
         icon: 'CommentBubbles',
         translationKey: 'common.message',
         onSelected: () => {
-            if (reportID) {
-                Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(reportID));
-                return;
-            }
-
-            // The accountID might be optimistic, so we should use the login if we have it
             if (login) {
                 navigateToAndOpenReport([login], currentUserAccountID, introSelected, isSelfTourViewed, betas, false);
                 return;
             }
             if (accountID) {
                 navigateToAndOpenReportWithAccountIDs([accountID], currentUserAccountID, introSelected, isSelfTourViewed, betas);
+                return;
+            }
+
+            if (reportID) {
+                Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(reportID));
             }
         },
     }),

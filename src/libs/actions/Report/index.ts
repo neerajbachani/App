@@ -161,6 +161,7 @@ import {
     isOpenExpenseReport,
     isProcessingReport,
     isReportManuallyReimbursed,
+    isReportNotFound,
     isSelfDM,
     isValidReportIDFromPath,
     prepareOnboardingOnyxData,
@@ -1954,17 +1955,10 @@ function createTransactionThreadReport(
  */
 function navigateToReport(reportID: string | undefined, shouldDismissModal = true) {
     if (shouldDismissModal) {
-        Navigation.dismissModal({
-            afterTransition: () => {
-                if (!reportID) {
-                    return;
-                }
-
-                Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(reportID));
-            },
-        });
-    } else if (reportID) {
-        Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(reportID));
+        Navigation.dismissModal();
+    }
+    if (!reportID) {
+        return;
     }
     // In some cases when RHP modal gets hidden and then we navigate to report Composer focus breaks, wrapping navigation in setTimeout fixes this
     setTimeout(() => {
@@ -1987,22 +1981,59 @@ function navigateToAndOpenReport(
     betas: OnyxEntry<Beta[]>,
     shouldDismissModal = true,
 ) {
-    let newChat: OptimisticChatReport | undefined;
     const participantAccountIDs = PersonalDetailsUtils.getAccountIDsByLogins(userLogins);
     const chat = getChatByParticipants([...participantAccountIDs, currentUserAccountID]);
-
-    if (isEmptyObject(chat)) {
-        newChat = buildOptimisticChatReport({
+    const createAndOpenNewOptimisticChat = () => {
+        const fallbackChat = buildOptimisticChatReport({
             participantList: [...participantAccountIDs, currentUserAccountID],
             notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.HIDDEN,
             currentUserAccountID,
         });
-        // We want to pass newChat here because if anything is passed in that param (even an existing chat), we will try to create a chat on the server
-        openReport({reportID: newChat?.reportID, introSelected, reportActionID: '', participantLoginList: userLogins, newReportObject: newChat, isSelfTourViewed, betas});
-    }
-    const report = isEmptyObject(chat) ? newChat : chat;
 
-    navigateToReport(report?.reportID, shouldDismissModal);
+        // We pass newReportObject to force chat creation on the server.
+        openReport({
+            reportID: fallbackChat.reportID,
+            introSelected,
+            reportActionID: '',
+            participantLoginList: userLogins,
+            newReportObject: fallbackChat,
+            isSelfTourViewed,
+            betas,
+        });
+
+        navigateToReport(fallbackChat.reportID, shouldDismissModal);
+    };
+
+    if (isEmptyObject(chat) || isReportNotFound(chat)) {
+        createAndOpenNewOptimisticChat();
+        return;
+    }
+
+    let hasAttemptedFallback = false;
+    const reportConnection = Onyx.connectWithoutView({
+        key: `${ONYXKEYS.COLLECTION.REPORT}${chat.reportID}`,
+        callback: (updatedReport) => {
+            // If OpenReport confirms access, stop listening.
+            if (!updatedReport?.errorFields?.notFound) {
+                return;
+            }
+
+            if (hasAttemptedFallback) {
+                return;
+            }
+            hasAttemptedFallback = true;
+            Onyx.disconnect(reportConnection);
+            createAndOpenNewOptimisticChat();
+        },
+    });
+
+    setTimeout(() => {
+        Onyx.disconnect(reportConnection);
+    }, 10000);
+
+    // Re-open existing chats to re-validate server-side access and refresh stale local state.
+    openReport({reportID: chat.reportID, introSelected, isSelfTourViewed, betas});
+    navigateToReport(chat.reportID, shouldDismissModal);
 }
 
 function navigateToAndCreateGroupChat(
@@ -2038,27 +2069,57 @@ function navigateToAndOpenReportWithAccountIDs(
     isSelfTourViewed: boolean | undefined,
     betas: OnyxEntry<Beta[]>,
 ) {
-    let newChat: OptimisticChatReport | undefined;
     const chat = getChatByParticipants([...participantAccountIDs, currentUserAccountID]);
-    if (!chat) {
-        newChat = buildOptimisticChatReport({
+    const createAndOpenNewOptimisticChat = () => {
+        const fallbackChat = buildOptimisticChatReport({
             participantList: [...participantAccountIDs, currentUserAccountID],
             currentUserAccountID,
         });
-        // We want to pass newChat here because if anything is passed in that param (even an existing chat), we will try to create a chat on the server
+
+        // We pass newReportObject to force chat creation on the server.
         openReport({
-            reportID: newChat?.reportID,
+            reportID: fallbackChat.reportID,
             introSelected,
             isSelfTourViewed,
-            newReportObject: newChat,
+            newReportObject: fallbackChat,
             parentReportActionID: '0',
             participantAccountIDList: participantAccountIDs,
             betas,
         });
-    }
-    const report = chat ?? newChat;
 
-    Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(report?.reportID));
+        navigateToReport(fallbackChat.reportID, false);
+    };
+
+    if (!chat || isReportNotFound(chat)) {
+        createAndOpenNewOptimisticChat();
+        return;
+    }
+
+    let hasAttemptedFallback = false;
+    const reportConnection = Onyx.connectWithoutView({
+        key: `${ONYXKEYS.COLLECTION.REPORT}${chat.reportID}`,
+        callback: (updatedReport) => {
+            // If OpenReport confirms access, stop listening.
+            if (!updatedReport?.errorFields?.notFound) {
+                return;
+            }
+
+            if (hasAttemptedFallback) {
+                return;
+            }
+            hasAttemptedFallback = true;
+            Onyx.disconnect(reportConnection);
+            createAndOpenNewOptimisticChat();
+        },
+    });
+
+    setTimeout(() => {
+        Onyx.disconnect(reportConnection);
+    }, 10000);
+
+    // Re-open existing chats to re-validate server-side access and refresh stale local state.
+    openReport({reportID: chat.reportID, introSelected, isSelfTourViewed, betas});
+    navigateToReport(chat.reportID, false);
 }
 
 /**
