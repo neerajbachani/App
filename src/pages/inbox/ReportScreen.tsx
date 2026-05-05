@@ -7,6 +7,7 @@ import ScreenWrapper from '@components/ScreenWrapper';
 import WideRHPOverlayWrapper from '@components/WideRHPOverlayWrapper';
 import useActionListContextValue from '@hooks/useActionListContextValue';
 import {useCurrentReportIDState} from '@hooks/useCurrentReportID';
+import useIsInSidePanel from '@hooks/useIsInSidePanel';
 import useOnyx from '@hooks/useOnyx';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useSubmitToDestinationVisible from '@hooks/useSubmitToDestinationVisible';
@@ -14,6 +15,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useViewportOffsetTop from '@hooks/useViewportOffsetTop';
 import {removeFailedReport} from '@libs/actions/Report';
 import getNonEmptyStringOnyxID from '@libs/getNonEmptyStringOnyxID';
+import getPlatform from '@libs/getPlatform';
 import Navigation from '@libs/Navigation/Navigation';
 import type {PlatformStackScreenProps} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {ReportsSplitNavigatorParamList, RightModalNavigatorParamList} from '@navigation/types';
@@ -51,10 +53,12 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
     const styles = useThemeStyles();
     const reportIDFromRoute = getNonEmptyStringOnyxID(route.params?.reportID);
     const {isInNarrowPaneModal} = useResponsiveLayout();
+    const isInSidePanel = useIsInSidePanel();
     const {currentReportID: currentReportIDValue} = useCurrentReportIDState();
     const viewportOffsetTop = useViewportOffsetTop();
     const isTopMostReportId = currentReportIDValue === reportIDFromRoute;
     const screenWrapperStyle: ViewStyle[] = [styles.appContent, styles.flex1, {marginTop: viewportOffsetTop}];
+    const shouldIncludeTopPadding = !(isInSidePanel && getPlatform() !== CONST.PLATFORM.WEB);
 
     const shouldDeferNonEssentials = useDeferNonEssentials(reportIDFromRoute);
 
@@ -90,6 +94,7 @@ function ReportScreen({route, navigation}: ReportScreenProps) {
                         navigation={navigation}
                         style={screenWrapperStyle}
                         shouldEnableKeyboardAvoidingView={isTopMostReportId || isInNarrowPaneModal}
+                        includePaddingTop={shouldIncludeTopPadding}
                         testID={`report-screen-${reportIDFromRoute}`}
                     >
                         {!shouldDeferNonEssentials && (
