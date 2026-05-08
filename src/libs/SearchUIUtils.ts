@@ -5123,6 +5123,25 @@ function getColumnsToShow({
     shouldUseStrictDefaultExpenseColumns?: boolean;
     policy?: OnyxTypes.Policy;
 }): SearchColumnType[] {
+    const ensureCommentsBeforeTotalInExpenseReportView = (columnList: SearchColumnType[]): SearchColumnType[] => {
+        if (!isExpenseReportView) {
+            return columnList;
+        }
+
+        const commentsIndex = columnList.indexOf(CONST.SEARCH.TABLE_COLUMNS.COMMENTS);
+        const totalIndex = columnList.indexOf(CONST.SEARCH.TABLE_COLUMNS.TOTAL);
+
+        if (commentsIndex === -1 || totalIndex === -1 || commentsIndex < totalIndex) {
+            return columnList;
+        }
+
+        const reorderedColumns = [...columnList];
+        reorderedColumns.splice(commentsIndex, 1);
+        const updatedTotalIndex = reorderedColumns.indexOf(CONST.SEARCH.TABLE_COLUMNS.TOTAL);
+        reorderedColumns.splice(updatedTotalIndex, 0, CONST.SEARCH.TABLE_COLUMNS.COMMENTS);
+        return reorderedColumns;
+    };
+
     if (type === CONST.SEARCH.DATA_TYPES.EXPENSE_REPORT) {
         const defaultReportColumns: SearchColumnType[] = [
             CONST.SEARCH.TABLE_COLUMNS.AVATAR,
@@ -5238,8 +5257,8 @@ function getColumnsToShow({
               [CONST.SEARCH.TABLE_COLUMNS.REIMBURSABLE]: shouldShowReimbursableColumn,
               [CONST.SEARCH.TABLE_COLUMNS.BILLABLE]: shouldShowBillableColumn,
               [CONST.SEARCH.TABLE_COLUMNS.TOTAL_AMOUNT]: false,
-              [CONST.SEARCH.TABLE_COLUMNS.TOTAL]: true,
               [CONST.SEARCH.TABLE_COLUMNS.COMMENTS]: shouldShowCommentsColumn,
+              [CONST.SEARCH.TABLE_COLUMNS.TOTAL]: true,
           }
         : {
               [CONST.SEARCH.TABLE_COLUMNS.AVATAR]: true,
@@ -5484,10 +5503,10 @@ function getColumnsToShow({
             CONST.SEARCH.TABLE_COLUMNS.WITHDRAWAL_ID,
         ]);
 
-        return customResult.filter((col) => nonDataColumns.has(col) || columns[col]);
+        return ensureCommentsBeforeTotalInExpenseReportView(customResult.filter((col) => nonDataColumns.has(col) || columns[col]));
     }
 
-    return (Object.keys(columns) as SearchColumnType[]).filter((col) => columns[col]);
+    return ensureCommentsBeforeTotalInExpenseReportView((Object.keys(columns) as SearchColumnType[]).filter((col) => columns[col]));
 }
 
 /**
