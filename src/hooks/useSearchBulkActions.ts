@@ -12,7 +12,7 @@ import {useSearchActionsContext, useSearchStateContext} from '@components/Search
 import type {BulkPaySelectionData, PaymentData, SearchQueryJSON} from '@components/Search/types';
 import {unholdRequest} from '@libs/actions/IOU/Hold';
 import {setupMergeTransactionDataAndNavigate} from '@libs/actions/MergeTransaction';
-import {deleteAppReport, markAsManuallyExported, moveIOUReportToPolicy, moveIOUReportToPolicyAndInviteSubmitter} from '@libs/actions/Report';
+import {deleteAppReport, exportReportToPDF, markAsManuallyExported, moveIOUReportToPolicy, moveIOUReportToPolicyAndInviteSubmitter} from '@libs/actions/Report';
 import {
     approveMoneyRequestOnSearch,
     bulkDeleteReports,
@@ -246,6 +246,8 @@ function useSearchBulkActions({queryJSON}: UseSearchBulkActionsParams) {
 
     const [isOfflineModalVisible, setIsOfflineModalVisible] = useState(false);
     const [isDownloadErrorModalVisible, setIsDownloadErrorModalVisible] = useState(false);
+    const [pdfReportID, setPDFReportID] = useState<string | undefined>(undefined);
+    const [isPDFModalVisible, setIsPDFModalVisible] = useState(false);
     const {showConfirmModal} = useConfirmModal();
     const [isHoldEducationalModalVisible, setIsHoldEducationalModalVisible] = useState(false);
     const [rejectModalAction, setRejectModalAction] = useState<ValueOf<
@@ -259,6 +261,7 @@ function useSearchBulkActions({queryJSON}: UseSearchBulkActionsParams) {
 
     const isExpenseReportType = queryJSON?.type === CONST.SEARCH.DATA_TYPES.EXPENSE_REPORT;
     const expensifyIcons = useMemoizedLazyExpensifyIcons([
+        'Download',
         'Export',
         'Table',
         'TablePencil',
@@ -1282,6 +1285,32 @@ function useSearchBulkActions({queryJSON}: UseSearchBulkActionsParams) {
 
         options.push(exportButtonOption);
 
+        const selectedReportIDForPDF = selectedReports.at(0)?.reportID;
+        if (isExpenseReportSearch && selectedReports.length === 1) {
+            options.push({
+                icon: expensifyIcons.Download,
+                text: translate('common.downloadAsPDF'),
+                value: CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF,
+                shouldCloseModalOnSelect: true,
+                onSelected: () => {
+                    if (isOffline) {
+                        setIsOfflineModalVisible(true);
+                        return;
+                    }
+
+                    if (!selectedReportIDForPDF) {
+                        // Avoid silent no-op when a selected row lacks a reportID.
+                        setIsDownloadErrorModalVisible(true);
+                        return;
+                    }
+
+                    setPDFReportID(selectedReportIDForPDF);
+                    exportReportToPDF({reportID: selectedReportIDForPDF});
+                    setIsPDFModalVisible(true);
+                },
+            });
+        }
+
         const shouldShowHoldOption = !isOffline && selectedTransactionsKeys.every((id) => selectedTransactions[id].canHold);
 
         if (shouldShowHoldOption) {
@@ -1556,6 +1585,15 @@ function useSearchBulkActions({queryJSON}: UseSearchBulkActionsParams) {
         setIsDownloadErrorModalVisible(false);
     }, [setIsDownloadErrorModalVisible]);
 
+    const handlePDFModalClose = useCallback(() => {
+        setIsPDFModalVisible(false);
+    }, []);
+
+    const handlePDFModalHide = useCallback(() => {
+        setPDFReportID(undefined);
+        clearSelectedTransactions();
+    }, [clearSelectedTransactions]);
+
     const dismissModalAndUpdateUseHold = useCallback(() => {
         setIsHoldEducationalModalVisible(false);
         setNameValuePair(ONYXKEYS.NVP_DISMISSED_HOLD_USE_EXPLANATION, true, false, !isOffline);
@@ -1591,6 +1629,10 @@ function useSearchBulkActions({queryJSON}: UseSearchBulkActionsParams) {
         emptyReportsCount,
         handleOfflineModalClose,
         handleDownloadErrorModalClose,
+        pdfReportID,
+        isPDFModalVisible,
+        handlePDFModalClose,
+        handlePDFModalHide,
         dismissModalAndUpdateUseHold,
         dismissRejectModalBasedOnAction,
         isDuplicateOptionVisible,

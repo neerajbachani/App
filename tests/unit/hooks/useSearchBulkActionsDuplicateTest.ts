@@ -7,6 +7,7 @@ import useBulkDuplicateAction from '@hooks/useBulkDuplicateAction';
 import useBulkDuplicateReportAction from '@hooks/useBulkDuplicateReportAction';
 import useSearchBulkActions from '@hooks/useSearchBulkActions';
 import {bulkDuplicateExpenses, bulkDuplicateReports} from '@libs/actions/IOU/Duplicate';
+import {exportReportToPDF} from '@libs/actions/Report';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import type {Policy, PolicyCategories, PolicyTagLists, Report} from '@src/types/onyx';
@@ -47,6 +48,7 @@ jest.mock('@libs/actions/SplitExpenses.ts', () => ({
 
 jest.mock('@libs/actions/Report', () => ({
     deleteAppReport: jest.fn(),
+    exportReportToPDF: jest.fn(),
     moveIOUReportToPolicy: jest.fn(),
     moveIOUReportToPolicyAndInviteSubmitter: jest.fn(),
 }));
@@ -83,9 +85,10 @@ jest.mock('@hooks/useTheme', () => ({
     default: () => ({icon: ''}),
 }));
 
+let mockIsOffline = false;
 jest.mock('@hooks/useNetwork', () => ({
     __esModule: true,
-    default: () => ({isOffline: false}),
+    default: () => ({isOffline: mockIsOffline}),
 }));
 
 jest.mock('@hooks/useEnvironment', () => ({
@@ -256,6 +259,7 @@ describe('useSearchBulkActions - duplicate option', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        mockIsOffline = false;
         await Onyx.clear();
         mockSelectedTransactions = {};
         mockSelectedReports = [];
@@ -1088,6 +1092,7 @@ describe('useSearchBulkActions - duplicate report option', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        mockIsOffline = false;
         await Onyx.clear();
         mockSelectedTransactions = {};
         mockSelectedReports = [];
@@ -1358,5 +1363,134 @@ describe('useSearchBulkActions - duplicate report option', () => {
         result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DUPLICATE_REPORT)?.onSelected?.();
 
         expect(mockClearSelectedTransactions).toHaveBeenCalledWith(undefined, true);
+    });
+});
+
+describe('useSearchBulkActions - download PDF bulk action', () => {
+    beforeAll(() => {
+        Onyx.init({keys: ONYXKEYS});
+    });
+
+    beforeEach(async () => {
+        jest.clearAllMocks();
+        mockIsOffline = false;
+        await Onyx.clear();
+        mockSelectedTransactions = {};
+        mockSelectedReports = [];
+        mockAreAllMatchingItemsSelected = false;
+        mockDefaultExpensePolicy = {id: 'policy1', type: CONST.POLICY.TYPE.TEAM, name: 'Test WS'} as Policy;
+
+        await Onyx.merge(ONYXKEYS.SESSION, {accountID: CURRENT_USER_ACCOUNT_ID, email: 'test@example.com'});
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}report1`, {
+            reportID: 'report1',
+            policyID: 'policy1',
+            ownerAccountID: CURRENT_USER_ACCOUNT_ID,
+            type: CONST.REPORT.TYPE.EXPENSE,
+            reportName: 'Test Report',
+        });
+    });
+
+    afterEach(async () => {
+        await Onyx.clear();
+    });
+
+    function setupSingleExpenseReportSelection(reportID: string | undefined = 'report1') {
+        mockSelectedTransactions = {txn1: makeSelectedTransaction({reportID, policyID: 'policy1'})};
+        mockSelectedReports = [makeSelectedReport({reportID, policyID: 'policy1'})];
+    }
+
+    it('includes Download as PDF immediately after Export when one report is selected', async () => {
+        setupSingleExpenseReportSelection();
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+
+        await waitFor(() => {
+            const options = result.current.headerButtonsOptions;
+            const exportOptionIndex = options.findIndex((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.EXPORT);
+            const downloadPDFIndex = options.findIndex((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF);
+            expect(exportOptionIndex).toBeGreaterThan(-1);
+            expect(downloadPDFIndex).toBe(exportOptionIndex + 1);
+        });
+    });
+
+    it('hides Download as PDF when multiple reports are selected', async () => {
+        mockSelectedTransactions = {
+            txn1: makeSelectedTransaction({reportID: 'report1', policyID: 'policy1'}),
+            txn2: makeSelectedTransaction({reportID: 'report2', policyID: 'policy1'}),
+        };
+        mockSelectedReports = [makeSelectedReport({reportID: 'report1', policyID: 'policy1'}), makeSelectedReport({reportID: 'report2', policyID: 'policy1'})];
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}report2`, {
+            reportID: 'report2',
+            policyID: 'policy1',
+            ownerAccountID: CURRENT_USER_ACCOUNT_ID,
+            type: CONST.REPORT.TYPE.EXPENSE,
+            reportName: 'Second Report',
+        });
+
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+        await waitFor(() => expect(result.current.headerButtonsOptions.length).toBeGreaterThan(0));
+
+        expect(result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)).toBeUndefined();
+    });
+
+    it('hides Download as PDF when all matching items are selected', async () => {
+        mockAreAllMatchingItemsSelected = true;
+        setupSingleExpenseReportSelection();
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+
+        await waitFor(() => expect(result.current.headerButtonsOptions.length).toBe(1));
+        expect(result.current.headerButtonsOptions.at(0)?.value).toBe(CONST.SEARCH.BULK_ACTION_TYPES.EXPORT);
+    });
+
+    it('shows offline modal and does not export when offline', async () => {
+        mockIsOffline = true;
+        setupSingleExpenseReportSelection();
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+
+        await waitFor(() => {
+            expect(result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)).toBeDefined();
+        });
+
+        result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)?.onSelected?.();
+
+        expect(exportReportToPDF).not.toHaveBeenCalled();
+        expect(mockClearSelectedTransactions).not.toHaveBeenCalled();
+        await waitFor(() => expect(result.current.isOfflineModalVisible).toBe(true));
+    });
+
+    it('does not silently fail when selected report ID is missing', async () => {
+        setupSingleExpenseReportSelection(undefined);
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+
+        await waitFor(() => {
+            expect(result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)).toBeDefined();
+        });
+
+        result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)?.onSelected?.();
+
+        expect(exportReportToPDF).not.toHaveBeenCalled();
+        expect(result.current.isDownloadErrorModalVisible).toBe(true);
+    });
+
+    it('exports PDF and clears selection only after modal hide', async () => {
+        setupSingleExpenseReportSelection();
+        const {result} = renderHook(() => useSearchBulkActions({queryJSON: expenseReportQueryJSON}));
+
+        await waitFor(() => {
+            expect(result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)).toBeDefined();
+        });
+
+        result.current.headerButtonsOptions.find((o) => o.value === CONST.SEARCH.BULK_ACTION_TYPES.DOWNLOAD_PDF)?.onSelected?.();
+
+        expect(exportReportToPDF).toHaveBeenCalledWith({reportID: 'report1'});
+        expect(mockClearSelectedTransactions).not.toHaveBeenCalled();
+        expect(result.current.pdfReportID).toBe('report1');
+        expect(result.current.isPDFModalVisible).toBe(true);
+
+        result.current.handlePDFModalClose();
+        expect(result.current.isPDFModalVisible).toBe(false);
+
+        result.current.handlePDFModalHide();
+        expect(result.current.pdfReportID).toBeUndefined();
+        expect(mockClearSelectedTransactions).toHaveBeenCalledWith();
     });
 });

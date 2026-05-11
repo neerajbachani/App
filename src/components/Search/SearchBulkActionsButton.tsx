@@ -10,6 +10,7 @@ import HoldSubmitterEducationalModal from '@components/HoldSubmitterEducationalM
 import KYCWall from '@components/KYCWall';
 import {KYCWallContext} from '@components/KYCWall/KYCWallContext';
 import {useLockedAccountActions, useLockedAccountState} from '@components/LockedAccountModalProvider';
+import ReportPDFDownloadModal from '@components/ReportPDFDownloadModal';
 import useLocalize from '@hooks/useLocalize';
 import useOnyx from '@hooks/useOnyx';
 import usePolicy from '@hooks/usePolicy';
@@ -66,6 +67,10 @@ function SearchBulkActionsButton({queryJSON}: SearchBulkActionsButtonProps) {
         emptyReportsCount,
         handleOfflineModalClose,
         handleDownloadErrorModalClose,
+        pdfReportID,
+        isPDFModalVisible,
+        handlePDFModalClose,
+        handlePDFModalHide,
         dismissModalAndUpdateUseHold,
         dismissRejectModalBasedOnAction,
         isDuplicateOptionVisible,
@@ -251,6 +256,14 @@ function SearchBulkActionsButton({queryJSON}: SearchBulkActionsButtonProps) {
                 isVisible={isDownloadErrorModalVisible}
                 onClose={handleDownloadErrorModalClose}
             />
+            {!!pdfReportID && (
+                <ReportPDFDownloadModal
+                    reportID={pdfReportID}
+                    isVisible={isPDFModalVisible}
+                    onClose={handlePDFModalClose}
+                    onModalHide={handlePDFModalHide}
+                />
+            )}
             {!!rejectModalAction && (
                 <HoldOrRejectEducationalModal
                     onClose={dismissRejectModalBasedOnAction}
