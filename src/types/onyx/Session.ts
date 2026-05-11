@@ -5,6 +5,15 @@ import type * as OnyxCommon from './OnyxCommon';
 /** Possible states of the automatic authentication after user clicks on a magic link */
 type AutoAuthState = ValueOf<typeof CONST.AUTO_AUTH_STATE>;
 
+type ValidateLoginFlowSource = 'AUTO' | 'EXPLICIT_CLICK';
+
+type ValidateLoginFlowPhase = 'IDLE' | 'SIGNING_IN' | 'SIGNED_IN' | 'COMPLETED';
+
+type ValidateLoginFlow = {
+    source: ValidateLoginFlowSource;
+    phase: ValidateLoginFlowPhase;
+};
+
 /** Model of user session data */
 type Session = {
     /** The user's email for the current session */
@@ -31,6 +40,9 @@ type Session = {
     /** Current state of the automatic authentication after user clicks on a magic link */
     autoAuthState?: AutoAuthState;
 
+    /** Source and phase used to coordinate validate-login flow behavior on web */
+    validateLoginFlow?: ValidateLoginFlow;
+
     /** Server side errors keyed by microtime */
     errors?: OnyxCommon.Errors;
 
@@ -55,4 +67,4 @@ type Session = {
 
 export default Session;
 
-export type {AutoAuthState};
+export type {AutoAuthState, ValidateLoginFlow, ValidateLoginFlowPhase, ValidateLoginFlowSource};

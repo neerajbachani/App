@@ -71,6 +71,7 @@ import type {OnyxData} from '@src/types/onyx/Request';
 import type Response from '@src/types/onyx/Response';
 import type Session from '@src/types/onyx/Session';
 import type {AutoAuthState} from '@src/types/onyx/Session';
+import type {ValidateLoginFlowSource} from '@src/types/onyx/Session';
 import pkg from '../../../../package.json';
 import clearCache from './clearCache';
 import updateSessionAuthTokens from './updateSessionAuthTokens';
@@ -891,7 +892,7 @@ function signIn(validateCode: string, preferredLocale: Locale | undefined, twoFa
     });
 }
 
-function signInWithValidateCode(accountID: number, code: string, preferredLocale: Locale | undefined, twoFactorAuthCode = '') {
+function signInWithValidateCode(accountID: number, code: string, preferredLocale: Locale | undefined, twoFactorAuthCode = '', validateLoginFlowSource: ValidateLoginFlowSource = 'AUTO') {
     // If this is called from the 2fa step, get the validateCode directly from onyx
     // instead of the one passed from the component state because the state is changing when this method is called.
     const validateCode = twoFactorAuthCode ? credentials.validateCode : code;
@@ -910,7 +911,13 @@ function signInWithValidateCode(accountID: number, code: string, preferredLocale
         {
             onyxMethod: Onyx.METHOD.MERGE,
             key: ONYXKEYS.SESSION,
-            value: {autoAuthState: CONST.AUTO_AUTH_STATE.SIGNING_IN},
+            value: {
+                autoAuthState: CONST.AUTO_AUTH_STATE.SIGNING_IN,
+                validateLoginFlow: {
+                    source: validateLoginFlowSource,
+                    phase: 'SIGNING_IN',
+                },
+            },
         },
     ];
 
@@ -934,7 +941,13 @@ function signInWithValidateCode(accountID: number, code: string, preferredLocale
         {
             onyxMethod: Onyx.METHOD.MERGE,
             key: ONYXKEYS.SESSION,
-            value: {autoAuthState: CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN},
+            value: {
+                autoAuthState: CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN,
+                validateLoginFlow: {
+                    source: validateLoginFlowSource,
+                    phase: 'SIGNED_IN',
+                },
+            },
         },
         onyxOperationToCleanUpAnonymousUser,
     ];
@@ -951,7 +964,13 @@ function signInWithValidateCode(accountID: number, code: string, preferredLocale
         {
             onyxMethod: Onyx.METHOD.MERGE,
             key: ONYXKEYS.SESSION,
-            value: {autoAuthState: CONST.AUTO_AUTH_STATE.FAILED},
+            value: {
+                autoAuthState: CONST.AUTO_AUTH_STATE.FAILED,
+                validateLoginFlow: {
+                    source: 'AUTO',
+                    phase: 'IDLE',
+                },
+            },
         },
     ];
     Device.getDeviceInfoWithID().then((deviceInfo) => {
@@ -1012,6 +1031,7 @@ function clearSignInData() {
         [ONYXKEYS.CREDENTIALS]: null,
     });
     Onyx.merge(ONYXKEYS.HYBRID_APP, {signingInWithSAML: null});
+    Onyx.merge(ONYXKEYS.SESSION, {validateLoginFlow: null});
 }
 
 /**
@@ -1422,7 +1442,7 @@ function handleExitToNavigation(exitTo: Route) {
 }
 
 function signInWithValidateCodeAndNavigate(accountID: number, validateCode: string, preferredLocale: Locale | undefined, twoFactorAuthCode = '', exitTo?: Route) {
-    signInWithValidateCode(accountID, validateCode, preferredLocale, twoFactorAuthCode);
+    signInWithValidateCode(accountID, validateCode, preferredLocale, twoFactorAuthCode, 'AUTO');
     if (exitTo) {
         handleExitToNavigation(exitTo);
     } else {

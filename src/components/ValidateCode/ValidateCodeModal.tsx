@@ -30,7 +30,9 @@ function ValidateCodeModal({code, accountID}: ValidateCodeModalProps) {
     const illustrations = useMemoizedLazyIllustrations(['MagicCode']);
     const [session] = useOnyx(ONYXKEYS.SESSION);
     const [preferredLocale] = useOnyx(ONYXKEYS.NVP_PREFERRED_LOCALE);
-    const signInHere = useCallback(() => signInWithValidateCode(accountID, code, preferredLocale), [accountID, code, preferredLocale]);
+    const signInHere = useCallback(() => {
+        signInWithValidateCode(accountID, code, preferredLocale, '', 'EXPLICIT_CLICK');
+    }, [accountID, code, preferredLocale]);
     const {translate} = useLocalize();
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const isValidCode = isValidValidateCode(code);

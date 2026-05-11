@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from 'react';
+import Onyx from 'react-native-onyx';
 import type {OnyxEntry} from 'react-native-onyx';
 import FullScreenLoadingIndicator from '@components/FullscreenLoadingIndicator';
 import ExpiredValidateCodeModal from '@components/ValidateCode/ExpiredValidateCodeModal';
@@ -10,6 +11,7 @@ import {isValidValidateCode} from '@libs/ValidationUtils';
 import {handleExitToNavigation, initAutoAuthState, signInWithValidateCode} from '@userActions/Session';
 import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
+import ROUTES from '@src/ROUTES';
 import type {Session as SessionType} from '@src/types/onyx';
 import type ValidateLoginPageProps from './types';
 
@@ -26,6 +28,7 @@ function ValidateLoginPage({
 
     const login = credentials?.login;
     const isSignedIn = !!session?.authToken && session?.authTokenType !== CONST.AUTH_TOKEN_TYPES.ANONYMOUS;
+    const validateLoginFlow = session?.validateLoginFlow;
     // When not signed in, ignore stored autoAuthState on the first render to prevent stale values
     // (e.g. FAILED from a previous magic link attempt) from briefly rendering incorrect UI.
     // Once initAutoAuthState() runs in the useEffect, the state is set to true and real values are used.
@@ -60,7 +63,7 @@ function ValidateLoginPage({
         }
 
         // The user has initiated the sign in process on the same browser, in another tab.
-        signInWithValidateCode(Number(accountID), validateCode, preferredLocale);
+        signInWithValidateCode(Number(accountID), validateCode, preferredLocale, '', 'AUTO');
 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -79,13 +82,34 @@ function ValidateLoginPage({
         });
     }, [login, cachedAccountID, is2FARequired, exitTo]);
 
+    useEffect(() => {
+        if (autoAuthStateWithDefault !== CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN || !isSignedIn || !!exitTo) {
+            return;
+        }
+
+        if (validateLoginFlow?.source !== 'EXPLICIT_CLICK' || validateLoginFlow?.phase !== 'SIGNED_IN') {
+            return;
+        }
+
+        Onyx.merge(ONYXKEYS.SESSION, {
+            autoAuthState: CONST.AUTO_AUTH_STATE.NOT_STARTED,
+            validateLoginFlow: {
+                source: 'AUTO',
+                phase: 'IDLE',
+            },
+        });
+        Navigation.isNavigationReady().then(() => {
+            Navigation.navigate(ROUTES.HOME, {forceReplace: true});
+        });
+    }, [autoAuthStateWithDefault, isSignedIn, exitTo, validateLoginFlow?.phase, validateLoginFlow?.source]);
+
     return (
         <>
             {autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.FAILED && !is2FARequired && <ExpiredValidateCodeModal />}
-            {(autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN || autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.FAILED) && is2FARequired && !isSignedIn && !!login && (
+            {(autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN || autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.FAILED) && is2FARequired && !isSignedIn && (
                 <JustSignedInModal is2FARequired />
             )}
-            {autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN && isSignedIn && !exitTo && !!login && <JustSignedInModal is2FARequired={false} />}
+            {autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.JUST_SIGNED_IN && isSignedIn && !exitTo && <JustSignedInModal is2FARequired={false} />}
             {/* If session.autoAuthState isn't available yet, we use shouldStartSignInWithValidateCode to conditionally render the component instead of local autoAuthState which contains a default value of NOT_STARTED */}
             {(!effectiveAutoAuthState ? !shouldStartSignInWithValidateCode : autoAuthStateWithDefault === CONST.AUTO_AUTH_STATE.NOT_STARTED && !isNavigatingToExitTo) && (
                 <ValidateCodeModal
