@@ -7,6 +7,7 @@ import useOnyx from '@hooks/useOnyx';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useStyleUtils from '@hooks/useStyleUtils';
 import useThemeStyles from '@hooks/useThemeStyles';
+import Log from '@libs/Log';
 import Navigation from '@libs/Navigation/Navigation';
 import {getIOUReportIDFromReportActionPreview, isSplitBillAction, isTrackExpenseAction} from '@libs/ReportActionsUtils';
 import {createTransactionThreadReport} from '@userActions/Report';
@@ -56,6 +57,15 @@ function ChatTransactionPreview({action, reportID, chatReportID, iouReport, shou
                 containerStyles={[reportPreviewStyles.transactionPreviewStandaloneStyle, styles.mt1]}
                 transactionPreviewWidth={reportPreviewStyles.transactionPreviewStandaloneStyle.width}
                 onPreviewPressed={() => {
+                    const backTo = Navigation.getActiveRoute();
+                    Log.info('[ChatTransactionPreview] onPreviewPressed', false, {
+                        reportID,
+                        transactionID,
+                        childReportID: action.childReportID,
+                        shouldShowSplitPreview,
+                        backTo,
+                    });
+
                     if (shouldShowSplitPreview) {
                         Navigation.navigate(ROUTES.SPLIT_BILL_DETAILS.getRoute(chatReportID, action.reportActionID, Navigation.getReportRHPActiveRoute()));
                         return;

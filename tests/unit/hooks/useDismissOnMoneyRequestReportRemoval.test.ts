@@ -1,5 +1,6 @@
 import type * as ReactNavigation from '@react-navigation/native';
 import {renderHook} from '@testing-library/react-native';
+import {InteractionManager} from 'react-native';
 import Onyx from 'react-native-onyx';
 import useDismissOnMoneyRequestReportRemoval from '@hooks/useDismissOnMoneyRequestReportRemoval';
 import Navigation from '@navigation/Navigation';
@@ -18,8 +19,16 @@ jest.mock('@react-navigation/native', () => {
     };
 });
 
+const mockGetActiveRoute = jest.fn(() => '/');
+const mockRewriteReportIDInNavigationState = jest.fn(() => 0);
+
+jest.mock('@libs/Navigation/helpers/rewriteReportIDInNavigationState', () => ({
+    rewriteReportIDInNavigationState: (...args: unknown[]) => mockRewriteReportIDInNavigationState(...args) as number,
+}));
+
 jest.mock('@navigation/Navigation', () => ({
     dismissModal: jest.fn(),
+    getActiveRoute: () => mockGetActiveRoute(),
 }));
 
 const REPORT_A_ID = '1';
@@ -49,6 +58,8 @@ describe('useDismissOnMoneyRequestReportRemoval', () => {
     beforeEach(async () => {
         jest.clearAllMocks();
         mockUseIsFocused.mockReturnValue(true);
+        mockGetActiveRoute.mockReturnValue('/');
+        mockRewriteReportIDInNavigationState.mockReturnValue(0);
         await Onyx.clear();
         await waitForBatchedUpdates();
     });
@@ -91,6 +102,76 @@ describe('useDismissOnMoneyRequestReportRemoval', () => {
         rerender({reportID: REPORT_A_ID});
 
         expect(Navigation.dismissModal).not.toHaveBeenCalled();
+    });
+
+    it('rewrites navigation instead of dismissing when a merged money request report is removed while unfocused', async () => {
+        mockUseIsFocused.mockReturnValue(false);
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, buildMoneyRequestReport(REPORT_A_ID, {preexistingReportID: REPORT_B_ID}));
+        await waitForBatchedUpdates();
+
+        const {rerender} = renderHook(({reportID}: {reportID: string}) => useDismissOnMoneyRequestReportRemoval(reportID), {
+            initialProps: {reportID: REPORT_A_ID},
+        });
+
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, null);
+        await waitForBatchedUpdates();
+        rerender({reportID: REPORT_A_ID});
+
+        expect(Navigation.dismissModal).not.toHaveBeenCalled();
+        expect(mockRewriteReportIDInNavigationState).toHaveBeenCalledWith({
+            fromReportID: REPORT_A_ID,
+            toReportID: REPORT_B_ID,
+        });
+    });
+
+    it('flushes latched merge rewrite when the receipt modal closes', async () => {
+        mockUseIsFocused.mockReturnValue(false);
+        mockGetActiveRoute.mockReturnValue('/r/999/transaction/abc/receipt/');
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, buildMoneyRequestReport(REPORT_A_ID, {preexistingReportID: REPORT_B_ID}));
+        await waitForBatchedUpdates();
+
+        const {rerender} = renderHook(({reportID}: {reportID: string}) => useDismissOnMoneyRequestReportRemoval(reportID), {
+            initialProps: {reportID: REPORT_A_ID},
+        });
+
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, null);
+        await waitForBatchedUpdates();
+        rerender({reportID: REPORT_A_ID});
+
+        expect(mockRewriteReportIDInNavigationState).toHaveBeenCalledTimes(1);
+        expect(Navigation.dismissModal).not.toHaveBeenCalled();
+
+        mockGetActiveRoute.mockReturnValue('/r/999/transaction/abc');
+        rerender({reportID: REPORT_A_ID});
+        await waitForBatchedUpdates();
+
+        expect(mockRewriteReportIDInNavigationState).toHaveBeenCalledTimes(2);
+        expect(Navigation.dismissModal).not.toHaveBeenCalled();
+    });
+
+    it('dismisses the modal after focus returns when the money request report was removed while unfocused', async () => {
+        mockUseIsFocused.mockReturnValue(false);
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, buildMoneyRequestReport(REPORT_A_ID));
+        await waitForBatchedUpdates();
+
+        const {rerender} = renderHook(({reportID}: {reportID: string}) => useDismissOnMoneyRequestReportRemoval(reportID), {
+            initialProps: {reportID: REPORT_A_ID},
+        });
+
+        await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}${REPORT_A_ID}`, null);
+        await waitForBatchedUpdates();
+        rerender({reportID: REPORT_A_ID});
+
+        expect(Navigation.dismissModal).not.toHaveBeenCalled();
+
+        mockUseIsFocused.mockReturnValue(true);
+        rerender({reportID: REPORT_A_ID});
+        await waitForBatchedUpdates();
+        await new Promise<void>((resolve) => {
+            InteractionManager.runAfterInteractions(() => resolve());
+        });
+
+        expect(Navigation.dismissModal).toHaveBeenCalledTimes(1);
     });
 
     it('does not dismiss the modal when the previous report was not a money request report', async () => {

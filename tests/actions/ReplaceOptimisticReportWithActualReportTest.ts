@@ -1,5 +1,5 @@
 import {beforeAll, beforeEach, describe, expect, it} from '@jest/globals';
-import {DeviceEventEmitter} from 'react-native';
+import {DeviceEventEmitter, InteractionManager} from 'react-native';
 import Onyx from 'react-native-onyx';
 import CONST from '@src/CONST';
 import {replaceOptimisticReportWithActualReport} from '@src/libs/actions/replaceOptimisticReportWithActualReport';
@@ -9,6 +9,13 @@ import createRandomReportAction from '../utils/collections/reportActions';
 import {createRandomReport} from '../utils/collections/reports';
 import getOnyxValue from '../utils/getOnyxValue';
 import waitForBatchedUpdates from '../utils/waitForBatchedUpdates';
+
+const flushInteractionManager = () =>
+    new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => {
+            resolve();
+        });
+    });
 
 type SwitchReportEventData = {
     preexistingReportID: string;
@@ -21,11 +28,23 @@ const mockSetParams = jest.fn();
 const mockIsReady = jest.fn(() => false);
 const mockGetActiveRoute = jest.fn(() => '');
 const mockGetCurrentRoute = jest.fn(() => undefined as {name: string; params: Record<string, unknown>} | undefined);
+const mockGetTopmostSuperWideRHPReportID = jest.fn(() => undefined as string | undefined);
+const mockGetTopmostSearchReportID = jest.fn(() => undefined as string | undefined);
+const mockGetTopmostReportId = jest.fn(() => undefined as string | undefined);
+const mockRewriteReportIDInNavigationState = jest.fn(() => 0);
+
+jest.mock('@libs/Navigation/helpers/rewriteReportIDInNavigationState', () => ({
+    replaceReportIdInNavigationPath: (path: string, oldReportId: string, newReportId: string) => path.replaceAll(oldReportId, newReportId),
+    rewriteReportIDInNavigationState: (...args: unknown[]) => mockRewriteReportIDInNavigationState(...args) as number,
+}));
 
 jest.mock('@libs/Navigation/Navigation', () => ({
     navigate: (...args: unknown[]) => mockNavigate(...args) as void,
     setParams: (...args: unknown[]) => mockSetParams(...args) as void,
     getActiveRoute: () => mockGetActiveRoute(),
+    getTopmostSuperWideRHPReportID: () => mockGetTopmostSuperWideRHPReportID(),
+    getTopmostSearchReportID: () => mockGetTopmostSearchReportID(),
+    getTopmostReportId: () => mockGetTopmostReportId(),
     navigationRef: {
         isReady: () => mockIsReady(),
         getCurrentRoute: () => mockGetCurrentRoute(),
@@ -57,9 +76,14 @@ describe('replaceOptimisticReportWithActualReport', () => {
         mockIsReady.mockReturnValue(false);
         mockGetActiveRoute.mockReturnValue('');
         mockGetCurrentRoute.mockReturnValue(undefined);
+        mockGetTopmostSuperWideRHPReportID.mockReturnValue(undefined);
+        mockGetTopmostSearchReportID.mockReturnValue(undefined);
+        mockGetTopmostReportId.mockReturnValue(undefined);
+        mockRewriteReportIDInNavigationState.mockReturnValue(0);
         mockNavigate.mockClear();
         mockSetParams.mockClear();
         mockOpenReport.mockClear();
+        mockRewriteReportIDInNavigationState.mockClear();
     });
 
     it('should do nothing if reportID is missing', async () => {
@@ -145,12 +169,141 @@ describe('replaceOptimisticReportWithActualReport', () => {
         replaceOptimisticReportWithActualReport(report, undefined);
 
         await waitForBatchedUpdates();
+        await flushInteractionManager();
 
         // Then the parent report action should be deleted
         const parentActions = await getOnyxValue(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`);
         expect(parentActions?.[parentReportActionID]).toBeFalsy();
 
         // And the optimistic report should be deleted
+        const deletedReport = await getOnyxValue(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`);
+        expect(deletedReport).toBeFalsy();
+    });
+
+    it('should setParams to preexistingReportID when optimistic money request report is replaced while search/view route shows that report', async () => {
+        const parentReportID = '10';
+        const parentReportActionID = 'action123';
+        const reportID = '1';
+        const preexistingReportID = '2';
+
+        mockIsReady.mockReturnValue(true);
+        mockGetActiveRoute.mockReturnValue(`/search/view/${reportID}`);
+
+        const report = createRandomReport(1, undefined);
+        report.reportID = reportID;
+        report.preexistingReportID = preexistingReportID;
+        report.parentReportID = parentReportID;
+        report.parentReportActionID = parentReportActionID;
+        report.type = CONST.REPORT.TYPE.IOU;
+
+        const parentAction = createRandomReportAction(1);
+        parentAction.childReportID = reportID;
+
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`, {
+            [parentReportActionID]: parentAction,
+        });
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, report);
+        await waitForBatchedUpdates();
+
+        let capturedEventData: SwitchReportEventData | undefined;
+        const subscription = DeviceEventEmitter.addListener(`switchToPreExistingReport_${reportID}`, (data: SwitchReportEventData) => {
+            capturedEventData = data;
+        });
+
+        replaceOptimisticReportWithActualReport(report, undefined);
+        await waitForBatchedUpdates();
+        await flushInteractionManager();
+
+        expect(capturedEventData).toBeDefined();
+        capturedEventData?.callback();
+        await waitForBatchedUpdates();
+
+        expect(mockRewriteReportIDInNavigationState).toHaveBeenCalledWith({
+            fromReportID: reportID,
+            toReportID: preexistingReportID,
+        });
+        expect(mockSetParams).toHaveBeenCalledWith({reportID: preexistingReportID});
+
+        const deletedReport = await getOnyxValue(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`);
+        expect(deletedReport).toBeFalsy();
+
+        subscription.remove();
+    });
+
+    it('should rewrite RHP navigation when optimistic report is bound in super wide RHP but active route is on receipt', async () => {
+        const parentReportID = '10';
+        const parentReportActionID = 'action123';
+        const reportID = '3214135433007086';
+        const preexistingReportID = '2944567330453429';
+        const transactionThreadReportID = '4821206653253535';
+
+        mockIsReady.mockReturnValue(true);
+        mockGetActiveRoute.mockReturnValue(`/r/${transactionThreadReportID}/transaction/abc/receipt/`);
+        mockGetCurrentRoute.mockReturnValue({name: SCREENS.TRANSACTION_RECEIPT, params: {}});
+        mockGetTopmostSuperWideRHPReportID.mockReturnValue(reportID);
+        mockRewriteReportIDInNavigationState.mockReturnValue(1);
+
+        const report = createRandomReport(1, undefined);
+        report.reportID = reportID;
+        report.preexistingReportID = preexistingReportID;
+        report.parentReportID = parentReportID;
+        report.parentReportActionID = parentReportActionID;
+        report.type = CONST.REPORT.TYPE.IOU;
+
+        const parentAction = createRandomReportAction(1);
+        parentAction.childReportID = reportID;
+
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`, {
+            [parentReportActionID]: parentAction,
+        });
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, report);
+        await waitForBatchedUpdates();
+
+        replaceOptimisticReportWithActualReport(report, undefined);
+        await waitForBatchedUpdates();
+        await flushInteractionManager();
+
+        expect(mockRewriteReportIDInNavigationState).toHaveBeenCalledWith({
+            fromReportID: reportID,
+            toReportID: preexistingReportID,
+        });
+        expect(mockSetParams).not.toHaveBeenCalled();
+
+        const deletedReport = await getOnyxValue(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`);
+        expect(deletedReport).toBeFalsy();
+    });
+
+    it('should not setParams when optimistic money request report is replaced but user is not on that report', async () => {
+        const parentReportID = '10';
+        const parentReportActionID = 'action123';
+        const reportID = '1';
+        const preexistingReportID = '2';
+
+        mockIsReady.mockReturnValue(true);
+        mockGetActiveRoute.mockReturnValue('/r/999');
+
+        const report = createRandomReport(1, undefined);
+        report.reportID = reportID;
+        report.preexistingReportID = preexistingReportID;
+        report.parentReportID = parentReportID;
+        report.parentReportActionID = parentReportActionID;
+        report.type = CONST.REPORT.TYPE.IOU;
+
+        const parentAction = createRandomReportAction(1);
+        parentAction.childReportID = reportID;
+
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`, {
+            [parentReportActionID]: parentAction,
+        });
+        await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, report);
+        await waitForBatchedUpdates();
+
+        replaceOptimisticReportWithActualReport(report, undefined);
+        await waitForBatchedUpdates();
+        await flushInteractionManager();
+
+        expect(mockSetParams).not.toHaveBeenCalled();
+
         const deletedReport = await getOnyxValue(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`);
         expect(deletedReport).toBeFalsy();
     });

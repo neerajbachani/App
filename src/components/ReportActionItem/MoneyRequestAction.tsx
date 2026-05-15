@@ -10,6 +10,7 @@ import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useStyleUtils from '@hooks/useStyleUtils';
 import useThemeStyles from '@hooks/useThemeStyles';
 import {createTransactionThreadReport} from '@libs/actions/Report';
+import Log from '@libs/Log';
 import Navigation from '@libs/Navigation/Navigation';
 import type {PlatformStackRouteProp} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {TransactionDuplicateNavigatorParamList} from '@libs/Navigation/types';
@@ -78,6 +79,11 @@ function MoneyRequestAction({action, chatReportID, requestReportID, reportID, is
 
     const onMoneyRequestPreviewPressed = () => {
         if (onPreviewPressed && action?.childReportID) {
+            Log.info('[MoneyRequestAction] Preview pressed; delegating to onPreviewPressed', false, {
+                childReportID: action.childReportID,
+                requestReportID,
+                chatReportID,
+            });
             onPreviewPressed(action?.childReportID);
             return;
         }
@@ -94,6 +100,14 @@ function MoneyRequestAction({action, chatReportID, requestReportID, reportID, is
         const transactionID = isMoneyRequestAction(action) ? getOriginalMessage(action)?.IOUTransactionID : CONST.DEFAULT_NUMBER_ID;
 
         if (!action?.childReportID && transactionID && action.reportActionID) {
+            Log.info('[MoneyRequestAction] Preview pressed without childReportID; creating optimistic transaction thread', false, {
+                transactionID,
+                reportActionID: action.reportActionID,
+                requestReportID,
+                chatReportID,
+                shouldOpenReportInRHP,
+                activeRoute: Navigation.getActiveRoute(),
+            });
             const transactionThreadReport = createTransactionThreadReport({
                 introSelected,
                 currentUserLogin: currentUserEmail ?? '',
@@ -103,18 +117,30 @@ function MoneyRequestAction({action, chatReportID, requestReportID, reportID, is
                 iouReportAction: action,
             });
             if (shouldOpenReportInRHP) {
+                Log.info('[MoneyRequestAction] Navigating to SEARCH_REPORT for optimistic thread', false, {
+                    threadReportID: transactionThreadReport?.reportID,
+                });
                 Navigation.navigate(ROUTES.SEARCH_REPORT.getRoute({reportID: transactionThreadReport?.reportID, backTo: Navigation.getActiveRoute()}));
                 return;
             }
+            Log.info('[MoneyRequestAction] Navigating to REPORT_WITH_ID for optimistic thread', false, {
+                threadReportID: transactionThreadReport?.reportID,
+            });
             Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(transactionThreadReport?.reportID, undefined, undefined, Navigation.getActiveRoute()));
             return;
         }
 
         if (shouldOpenReportInRHP) {
+            Log.info('[MoneyRequestAction] Navigating to SEARCH_REPORT with childReportID', false, {
+                childReportID: action?.childReportID,
+            });
             Navigation.navigate(ROUTES.SEARCH_REPORT.getRoute({reportID: action?.childReportID, backTo: Navigation.getActiveRoute()}));
             return;
         }
 
+        Log.info('[MoneyRequestAction] Navigating to REPORT_WITH_ID with childReportID', false, {
+            childReportID: action?.childReportID,
+        });
         Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(action?.childReportID, undefined, undefined, Navigation.getActiveRoute()));
     };
 

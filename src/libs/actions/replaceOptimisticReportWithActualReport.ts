@@ -2,6 +2,8 @@
 import {DeviceEventEmitter, InteractionManager} from 'react-native';
 import type {OnyxCollection} from 'react-native-onyx';
 import Onyx from 'react-native-onyx';
+import Log from '@libs/Log';
+import {replaceReportIdInNavigationPath, rewriteReportIDInNavigationState} from '@libs/Navigation/helpers/rewriteReportIDInNavigationState';
 import Navigation, {navigationRef} from '@libs/Navigation/Navigation';
 import {isMoneyRequest, isMoneyRequestReport, isOneTransactionReport} from '@libs/ReportUtils';
 import ONYXKEYS from '@src/ONYXKEYS';
@@ -56,6 +58,25 @@ Onyx.connectWithoutView({
     },
 });
 
+/** True when the URL path still refers to this report (central pane, search RHP, or wide money-request RHP). */
+function isActiveRouteReferencingReportId(activeRoute: string, reportId: string): boolean {
+    if (!activeRoute || !reportId) {
+        return false;
+    }
+    if (activeRoute.includes(`/r/${reportId}`)) {
+        return true;
+    }
+    const searchViewPrefix = `search/view/${reportId}`;
+    if (activeRoute.includes(`${searchViewPrefix}/`) || activeRoute.includes(`${searchViewPrefix}?`) || activeRoute.endsWith(searchViewPrefix)) {
+        return true;
+    }
+    const searchRPrefix = `search/r/${reportId}`;
+    if (activeRoute.includes(`${searchRPrefix}/`) || activeRoute.includes(`${searchRPrefix}?`) || activeRoute.endsWith(searchRPrefix)) {
+        return true;
+    }
+    return false;
+}
+
 function replaceOptimisticReportWithActualReport(report: Report, draftReportComment: string | undefined) {
     const {reportID, preexistingReportID, parentReportID, parentReportActionID} = report;
 
@@ -63,12 +84,143 @@ function replaceOptimisticReportWithActualReport(report: Report, draftReportComm
         return;
     }
 
-    // Handle cleanup of stale optimistic IOU report and its report preview separately
-    if (isMoneyRequestReport(report) && parentReportID && parentReportActionID) {
-        Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`, {
-            [parentReportActionID]: null,
+    const isStaleOptimisticMoneyRequestReport = isMoneyRequestReport(report) && !!parentReportID && !!parentReportActionID;
+    Log.info('[replaceOptimisticReportWithActualReport] enter', false, {
+        reportID,
+        preexistingReportID,
+        parentReportID,
+        parentReportActionID,
+        isStaleOptimisticMoneyRequestReport,
+        isMoneyRequestThread: isMoneyRequest(report),
+    });
+
+    // Handle cleanup of stale optimistic IOU/expense report and its report preview: same Onyx cleanup as before,
+    // but run through InteractionManager + navigation reroute so wide RHP does not stay on a deleted reportID.
+    if (isStaleOptimisticMoneyRequestReport) {
+        Log.info('[replaceOptimisticReportWithActualReport] Money-request report merge into preexisting; scheduling cleanup and optional reroute', false, {
+            reportID,
+            preexistingReportID,
+            parentReportID,
+            parentReportActionID,
+            navigationReady: navigationRef.isReady(),
         });
-        Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, null);
+
+        InteractionManager.runAfterInteractions(() => {
+            // Stale optimistic expense/IOU report always merges into preexistingReportID; parentReportID is the policy expense chat.
+            const reportToCopyDraftTo = preexistingReportID;
+
+            const moneyRequestCleanupCallback = () => {
+                Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${parentReportID}`, {
+                    [parentReportActionID]: null,
+                });
+                Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`, null);
+                Onyx.set(`${ONYXKEYS.COLLECTION.REPORT_DRAFT_COMMENT}${reportID}`, null);
+                Log.info('[replaceOptimisticReportWithActualReport] Money-request optimistic cleanup applied', false, {
+                    reportID,
+                    preexistingReportID,
+                    parentReportID,
+                    parentReportActionID,
+                });
+            };
+
+            if (!navigationRef.isReady()) {
+                Log.hmmm('[replaceOptimisticReportWithActualReport] navigationRef not ready; applying money-request cleanup without reroute', {
+                    reportID,
+                    preexistingReportID,
+                });
+                if (!draftReportComment) {
+                    moneyRequestCleanupCallback();
+                    return;
+                }
+                saveReportDraftComment(reportToCopyDraftTo, draftReportComment, moneyRequestCleanupCallback);
+                return;
+            }
+
+            const activeRoute = Navigation.getActiveRoute();
+            const currentRouteInfo = navigationRef.getCurrentRoute();
+            const backTo = (currentRouteInfo?.params as {backTo?: Route})?.backTo;
+            const screenName = currentRouteInfo?.name;
+
+            const topmostSuperWideRHPReportID = Navigation.getTopmostSuperWideRHPReportID();
+            const topmostSearchReportID = Navigation.getTopmostSearchReportID();
+            const topmostReportId = Navigation.getTopmostReportId();
+            const isOptimisticReportFocused = isActiveRouteReferencingReportId(activeRoute, reportID);
+            const isOptimisticReportInBackground =
+                screenName === SCREENS.RIGHT_MODAL.EXPENSE_REPORT && !!backTo && (backTo.includes(`/r/${reportID}`) || isActiveRouteReferencingReportId(backTo, reportID));
+            const isStaleReportBoundInRHP = topmostSuperWideRHPReportID === reportID || topmostSearchReportID === reportID;
+            const shouldRewriteRHP = isStaleReportBoundInRHP || isOptimisticReportFocused || isOptimisticReportInBackground;
+
+            Log.info('[replaceOptimisticReportWithActualReport] Money-request branch navigation snapshot', false, {
+                reportID,
+                preexistingReportID,
+                activeRoute,
+                screenName,
+                backTo,
+                topmostSuperWideRHPReportID,
+                topmostSearchReportID,
+                topmostReportId,
+                isOptimisticReportFocused,
+                isOptimisticReportInBackground,
+                isStaleReportBoundInRHP,
+                shouldRewriteRHP,
+            });
+
+            const runMoneyRequestRewriteAndCleanup = () => {
+                const rewrittenRouteCount = rewriteReportIDInNavigationState({
+                    fromReportID: reportID,
+                    toReportID: preexistingReportID.toString(),
+                });
+
+                if (rewrittenRouteCount > 0) {
+                    Log.info('[replaceOptimisticReportWithActualReport] Rewrote RHP reportID in navigation state', false, {
+                        fromReportID: reportID,
+                        toReportID: preexistingReportID.toString(),
+                        rewrittenRouteCount,
+                    });
+                } else if (isOptimisticReportFocused) {
+                    Navigation.setParams({reportID: preexistingReportID.toString()});
+                    Log.info('[replaceOptimisticReportWithActualReport] setParams to preexisting after money-request merge (fallback)', false, {
+                        fromReportID: reportID,
+                        toReportID: preexistingReportID.toString(),
+                    });
+                } else if (isOptimisticReportInBackground && backTo) {
+                    const navigatedBackTo = replaceReportIdInNavigationPath(backTo, reportID, preexistingReportID.toString());
+                    Navigation.navigate(navigatedBackTo as Route);
+                    Log.info('[replaceOptimisticReportWithActualReport] navigate backTo after money-request merge (fallback)', false, {
+                        backTo: navigatedBackTo,
+                    });
+                } else {
+                    Log.info('[replaceOptimisticReportWithActualReport] Skipped RHP rewrite - no bound route found in navigation state', false, {
+                        fromReportID: reportID,
+                        toReportID: preexistingReportID.toString(),
+                        topmostSuperWideRHPReportID,
+                        topmostSearchReportID,
+                        topmostReportId,
+                    });
+                }
+                moneyRequestCleanupCallback();
+            };
+
+            if (shouldRewriteRHP) {
+                if (draftReportComment) {
+                    DeviceEventEmitter.emit(`switchToPreExistingReport_${reportID}`, {
+                        preexistingReportID,
+                        reportToCopyDraftTo,
+                        callback: runMoneyRequestRewriteAndCleanup,
+                    });
+                    return;
+                }
+                runMoneyRequestRewriteAndCleanup();
+                return;
+            }
+
+            if (!draftReportComment) {
+                moneyRequestCleanupCallback();
+                return;
+            }
+
+            saveReportDraftComment(reportToCopyDraftTo, draftReportComment, moneyRequestCleanupCallback);
+        });
         return;
     }
 
@@ -128,6 +280,10 @@ function replaceOptimisticReportWithActualReport(report: Report, draftReportComm
         const reportToCopyDraftTo = !!parentReportID && isParentOneTransactionReport ? parentReportID : preexistingReportID;
 
         if (!navigationRef.isReady()) {
+            Log.hmmm('[replaceOptimisticReportWithActualReport] navigationRef not ready; running replacement callback without reroute', {
+                reportID,
+                preexistingReportID,
+            });
             callback();
             return;
         }
@@ -140,12 +296,24 @@ function replaceOptimisticReportWithActualReport(report: Report, draftReportComm
         const backTo = (currentRouteInfo?.params as {backTo?: Route})?.backTo;
         const screenName = currentRouteInfo?.name;
 
-        const isOptimisticReportFocused = activeRoute.includes(`/r/${reportID}`);
+        const isOptimisticReportFocused = isActiveRouteReferencingReportId(activeRoute, reportID);
 
         // Fix specific case: https://github.com/Expensify/App/pull/77657#issuecomment-3678696730.
         // When user is editing a money request report (/e/:reportID route) and has
         // an optimistic report in the background that should be replaced with preexisting report
-        const isOptimisticReportInBackground = screenName === SCREENS.RIGHT_MODAL.EXPENSE_REPORT && backTo && backTo.includes(`/r/${reportID}`);
+        const isOptimisticReportInBackground =
+            screenName === SCREENS.RIGHT_MODAL.EXPENSE_REPORT && !!backTo && (backTo.includes(`/r/${reportID}`) || isActiveRouteReferencingReportId(backTo, reportID));
+
+        Log.info('[replaceOptimisticReportWithActualReport] standard path navigation snapshot', false, {
+            reportID,
+            preexistingReportID,
+            activeRoute,
+            screenName,
+            backTo,
+            isOptimisticReportFocused,
+            isOptimisticReportInBackground,
+            hasDraft: !!draftReportComment,
+        });
 
         // Only re-route them if they are still looking at the optimistically created report
         if (isOptimisticReportFocused || isOptimisticReportInBackground) {
@@ -168,7 +336,7 @@ function replaceOptimisticReportWithActualReport(report: Report, draftReportComm
                     }
                 } else if (isOptimisticReportInBackground) {
                     // Navigate to the correct backTo route with the preexisting report ID
-                    Navigation.navigate(backTo.replace(`/r/${reportID}`, `/r/${preexistingReportID}`) as Route);
+                    Navigation.navigate(replaceReportIdInNavigationPath(backTo, reportID, preexistingReportID.toString()) as Route);
                 }
                 currCallback();
             };
