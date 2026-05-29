@@ -42,6 +42,7 @@ function ReportActionsView({reportID, onLayout}: ReportActionsViewProps) {
     const {
         reportActions,
         allReportActions,
+        fullCachedReportActions,
         allReportActionIDs,
         hasOlderActions,
         hasNewerActions,
@@ -99,6 +100,7 @@ function ReportActionsView({reportID, onLayout}: ReportActionsViewProps) {
             reportID,
             reportActions,
             allReportActions,
+            fullCachedReportActions,
             canPerformWriteAction,
             hasOlderActions,
             loadOlderChats,

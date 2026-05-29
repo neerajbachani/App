@@ -994,36 +994,197 @@ describe('ReportActionsUtils', () => {
             expect(result).toStrictEqual(expectedOutput);
         });
 
-        it('should filter out ACTIONABLE_MENTION_WHISPER when originalMessage.deleted is set', () => {
-            // Given an ADD_COMMENT and an ACTIONABLE_MENTION_WHISPER whose originalMessage.deleted is set.
-            // The backend sets this field when the parent comment is deleted (cascade deletion).
-            // This test verifies that the frontend correctly hides the whisper when it receives that field.
-            const input: ReportAction[] = [
-                {
+        describe('ACTIONABLE_MENTION_WHISPER visibility', () => {
+            const WHISPER_TARGET_ACCOUNT_ID = 18301266;
+
+            beforeEach(async () => {
+                await Onyx.merge(ONYXKEYS.SESSION, {accountID: WHISPER_TARGET_ACCOUNT_ID});
+                await waitForBatchedUpdates();
+            });
+
+            it('should keep ACTIONABLE_MENTION_WHISPER visible when originalMessage.deleted is set but parent is not deleted', async () => {
+                const reportID = '1';
+                const input: ReportAction[] = [
+                    {
+                        created: '2024-11-19 08:04:13.728',
+                        reportActionID: '1607371725956675966',
+                        reportID,
+                        actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                        originalMessage: {
+                            html: '<mention-user accountID="18414674"/>',
+                            mentionedAccountIDs: [18414674],
+                            whisperedTo: [],
+                            lastModified: '2024-11-19 08:04:13.728',
+                        },
+                        message: [
+                            {
+                                html: '<mention-user accountID="18414674"/>',
+                                text: '@someone',
+                                type: 'COMMENT',
+                                whisperedTo: [],
+                            },
+                        ],
+                    },
+                    {
+                        created: '2024-11-19 08:04:13.730',
+                        reportActionID: '1607371725956675967',
+                        reportID,
+                        actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                        originalMessage: {
+                            inviteeAccountIDs: [18414674],
+                            lastModified: '2024-11-19 08:04:25.813',
+                            whisperedTo: [18301266],
+                            deleted: '2024-11-19 08:04:27.000',
+                        },
+                        message: [
+                            {
+                                html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.",
+                                text: "Heads up,  isn't a member of this room.",
+                                type: 'COMMENT',
+                            },
+                        ],
+                    },
+                ];
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay(input, true);
+                expect(result).toStrictEqual(ReportActionsUtils.getSortedReportActions(input, true));
+            });
+
+            it('should filter out ACTIONABLE_MENTION_WHISPER when originalMessage.deleted is set and parent is deleted', async () => {
+                const reportID = '1';
+                const input: ReportAction[] = [
+                    {
+                        created: '2024-11-19 08:04:13.728',
+                        reportActionID: '1607371725956675966',
+                        reportID,
+                        actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                        originalMessage: {
+                            html: '<mention-user accountID="18414674"/>',
+                            whisperedTo: [],
+                            deleted: '2024-11-19 08:04:26.000',
+                            lastModified: '2024-11-19 08:04:13.728',
+                        },
+                        message: [{html: '', text: '', type: 'COMMENT'}],
+                    },
+                    {
+                        created: '2024-11-19 08:04:13.730',
+                        reportActionID: '1607371725956675967',
+                        reportID,
+                        actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                        originalMessage: {
+                            inviteeAccountIDs: [18414674],
+                            lastModified: '2024-11-19 08:04:25.813',
+                            whisperedTo: [18301266],
+                            deleted: '2024-11-19 08:04:27.000',
+                        },
+                        message: [
+                            {
+                                html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.",
+                                text: "Heads up,  isn't a member of this room.",
+                                type: 'COMMENT',
+                            },
+                        ],
+                    },
+                ];
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay(input, true);
+                expect(result).toStrictEqual([]);
+            });
+
+            it('should keep ACTIONABLE_REPORT_MENTION_WHISPER visible when originalMessage.deleted is set but parent is not deleted', async () => {
+                const reportID = '1';
+                const parentAction: ReportAction = {
+                    created: '2024-11-19 08:00:14.352',
+                    reportActionID: '4655978522337302598',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                    originalMessage: {
+                        html: '#join',
+                        whisperedTo: [],
+                        lastModified: '2024-11-19 08:00:14.352',
+                    },
+                    message: [{html: '#join', text: '#join', type: 'COMMENT', whisperedTo: []}],
+                };
+                const reportMentionWhisper: ReportAction = {
+                    created: '2024-11-19 08:00:14.353',
+                    reportActionID: '4655978522337302600',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_REPORT_MENTION_WHISPER,
+                    originalMessage: {
+                        deleted: '2024-11-19 08:00:15.000',
+                        lastModified: '2024-11-19 08:00:14.353',
+                        mentionedAccountIDs: [],
+                        whisperedTo: [18301266],
+                    },
+                    message: {
+                        html: "Heads up, <mention-report>#join</mention-report> doesn't exist yet. Do you want to create it?",
+                        text: "Heads up, #join doesn't exist yet. Do you want to create it?",
+                        type: 'COMMENT',
+                        whisperedTo: [18301266],
+                    },
+                };
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay([parentAction, reportMentionWhisper], true);
+                expect(result).toStrictEqual(ReportActionsUtils.getSortedReportActions([parentAction, reportMentionWhisper], true));
+            });
+
+            it('should keep ACTIONABLE_MENTION_WHISPER visible using parentReportActionID fallback when IDs are not offset-based', async () => {
+                const reportID = '1';
+                const parentAction: ReportAction = {
                     created: '2024-11-19 08:04:13.728',
                     reportActionID: '1607371725956675966',
-                    reportID: '1',
+                    reportID,
                     actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
                     originalMessage: {
                         html: '<mention-user accountID="18414674"/>',
+                        mentionedAccountIDs: [18414674],
                         whisperedTo: [],
                         lastModified: '2024-11-19 08:04:13.728',
                     },
-                    message: [
-                        {
-                            html: '<mention-user accountID="18414674"/>',
-                            text: '@someone',
-                            type: 'COMMENT',
-                            whisperedTo: [],
-                        },
-                    ],
-                },
-                {
+                    message: [{html: '<mention-user accountID="18414674"/>', text: '@someone', type: 'COMMENT', whisperedTo: []}],
+                };
+                const whisperWithRandomID: ReportAction = {
                     created: '2024-11-19 08:04:13.730',
-                    reportActionID: '6401435781022176',
-                    reportID: '1',
+                    reportActionID: '7401435781029999',
+                    reportID,
                     actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
                     originalMessage: {
+                        deleted: '2024-11-19 08:04:27.000',
+                        parentReportActionID: parentAction.reportActionID,
+                        inviteeAccountIDs: [18414674],
+                        lastModified: '2024-11-19 08:04:25.813',
+                        whisperedTo: [18301266],
+                    },
+                    message: [
+                        {html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.", text: "Heads up,  isn't a member of this room.", type: 'COMMENT'},
+                    ],
+                };
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay([parentAction, whisperWithRandomID], true);
+                expect(result).toStrictEqual(ReportActionsUtils.getSortedReportActions([parentAction, whisperWithRandomID], true));
+            });
+
+            it('should filter out ACTIONABLE_MENTION_WHISPER when deleted is set and parent comment no longer mentions the invitee', async () => {
+                const reportID = '1';
+                const parentAction: ReportAction = {
+                    created: '2024-11-19 08:04:13.728',
+                    reportActionID: '1607371725956675966',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                    originalMessage: {
+                        html: 'comment updated without mention',
+                        whisperedTo: [],
+                        lastModified: '2024-11-19 08:04:13.728',
+                    },
+                    message: [{html: 'comment updated without mention', text: 'comment updated without mention', type: 'COMMENT', whisperedTo: []}],
+                };
+                const staleWhisper: ReportAction = {
+                    created: '2024-11-19 08:04:13.730',
+                    reportActionID: '1607371725956675967',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                    originalMessage: {
+                        inviteeEmails: ['userb@expensify.com'],
                         inviteeAccountIDs: [18414674],
                         lastModified: '2024-11-19 08:04:25.813',
                         whisperedTo: [18301266],
@@ -1031,19 +1192,226 @@ describe('ReportActionsUtils', () => {
                     },
                     message: [
                         {
-                            html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.",
-                            text: "Heads up,  isn't a member of this room.",
+                            html: "Heads up, <mention-user>@userb@expensify.com</mention-user> isn't a member of this room.",
+                            text: "Heads up, @userb@expensify.com isn't a member of this room.",
                             type: 'COMMENT',
                         },
                     ],
+                };
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay([parentAction, staleWhisper], true);
+                expect(result).toStrictEqual([parentAction]);
+            });
+
+            it('should filter out ACTIONABLE_MENTION_WHISPER when deleted is set and parent comment switches mention to another user', async () => {
+                const reportID = '1';
+                const parentAction: ReportAction = {
+                    created: '2024-11-19 08:04:13.728',
+                    reportActionID: '1607371725956675966',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                    originalMessage: {
+                        html: '<mention-user>@usera@expensify.com</mention-user>',
+                        whisperedTo: [],
+                        lastModified: '2024-11-19 08:04:13.728',
+                    },
+                    message: [{html: '<mention-user>@usera@expensify.com</mention-user>', text: '@usera@expensify.com', type: 'COMMENT', whisperedTo: []}],
+                };
+                const staleWhisper: ReportAction = {
+                    created: '2024-11-19 08:04:13.730',
+                    reportActionID: '1607371725956675967',
+                    reportID,
+                    actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                    originalMessage: {
+                        inviteeEmails: ['userb@expensify.com'],
+                        inviteeAccountIDs: [18414674],
+                        lastModified: '2024-11-19 08:04:25.813',
+                        whisperedTo: [18301266],
+                        deleted: '2024-11-19 08:04:27.000',
+                    },
+                    message: [
+                        {
+                            html: "Heads up, <mention-user>@userb@expensify.com</mention-user> isn't a member of this room.",
+                            text: "Heads up, @userb@expensify.com isn't a member of this room.",
+                            type: 'COMMENT',
+                        },
+                    ],
+                };
+
+                const result = ReportActionsUtils.getSortedReportActionsForDisplay([parentAction, staleWhisper], true);
+                expect(result).toStrictEqual([parentAction]);
+            });
+        });
+    });
+
+    describe('isResolvedActionableWhisper', () => {
+        const buildReportActionsMap = (reportActions: ReportAction[]): ReportActions =>
+            reportActions.reduce<ReportActions>((acc, action) => {
+                if (action.reportActionID) {
+                    acc[action.reportActionID] = action;
+                }
+                return acc;
+            }, {});
+
+        it('should treat deleted ACTIONABLE_MENTION_WHISPER as resolved when no actionsForReport context is provided (#89450 fallback)', () => {
+            const whisperAction: ReportAction = {
+                created: '2024-11-19 08:04:13.730',
+                reportActionID: '1607371725956675967',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                originalMessage: {
+                    inviteeAccountIDs: [18414674],
+                    lastModified: '2024-11-19 08:04:25.813',
+                    whisperedTo: [18301266],
+                    deleted: '2024-11-19 08:04:27.000',
                 },
-            ];
+                message: [
+                    {html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.", text: "Heads up,  isn't a member of this room.", type: 'COMMENT'},
+                ],
+            };
 
-            // When sorted for display with write access enabled
-            const result = ReportActionsUtils.getSortedReportActionsForDisplay(input, true);
+            expect(ReportActionsUtils.isResolvedActionableWhisper(whisperAction)).toBe(true);
+        });
 
-            // Then the whisper with deleted set should be filtered out, leaving only the ADD_COMMENT
-            expect(result).toStrictEqual([input.at(0)]);
+        it('should not treat deleted ACTIONABLE_MENTION_WHISPER as resolved when parent is alive and still mentions invitee', () => {
+            const parentAction: ReportAction = {
+                created: '2024-11-19 08:04:13.728',
+                reportActionID: '1607371725956675966',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                originalMessage: {
+                    html: '<mention-user accountID="18414674"/>',
+                    mentionedAccountIDs: [18414674],
+                    whisperedTo: [],
+                    lastModified: '2024-11-19 08:04:13.728',
+                },
+                message: [{html: '<mention-user accountID="18414674"/>', text: '@someone', type: 'COMMENT', whisperedTo: []}],
+            };
+            const whisperAction: ReportAction = {
+                created: '2024-11-19 08:04:13.730',
+                reportActionID: '1607371725956675967',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                originalMessage: {
+                    inviteeAccountIDs: [18414674],
+                    lastModified: '2024-11-19 08:04:25.813',
+                    whisperedTo: [18301266],
+                    deleted: '2024-11-19 08:04:27.000',
+                },
+                message: [
+                    {html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.", text: "Heads up,  isn't a member of this room.", type: 'COMMENT'},
+                ],
+            };
+            const actionsForReport = buildReportActionsMap([parentAction, whisperAction]);
+
+            expect(ReportActionsUtils.isResolvedActionableWhisper(whisperAction, actionsForReport)).toBe(false);
+        });
+
+        it('should treat deleted ACTIONABLE_MENTION_WHISPER as resolved when parent is deleted', () => {
+            const parentAction: ReportAction = {
+                created: '2024-11-19 08:04:13.728',
+                reportActionID: '1607371725956675966',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                originalMessage: {
+                    html: '<mention-user accountID="18414674"/>',
+                    whisperedTo: [],
+                    deleted: '2024-11-19 08:04:26.000',
+                    lastModified: '2024-11-19 08:04:13.728',
+                },
+                message: [{html: '', text: '', type: 'COMMENT'}],
+            };
+            const whisperAction: ReportAction = {
+                created: '2024-11-19 08:04:13.730',
+                reportActionID: '1607371725956675967',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                originalMessage: {
+                    inviteeAccountIDs: [18414674],
+                    lastModified: '2024-11-19 08:04:25.813',
+                    whisperedTo: [18301266],
+                    deleted: '2024-11-19 08:04:27.000',
+                },
+                message: [
+                    {html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.", text: "Heads up,  isn't a member of this room.", type: 'COMMENT'},
+                ],
+            };
+            const actionsForReport = buildReportActionsMap([parentAction, whisperAction]);
+
+            expect(ReportActionsUtils.isResolvedActionableWhisper(whisperAction, actionsForReport)).toBe(true);
+        });
+
+        it('should treat deleted ACTIONABLE_MENTION_WHISPER as resolved when parent no longer mentions invitee', () => {
+            const parentAction: ReportAction = {
+                created: '2024-11-19 08:04:13.728',
+                reportActionID: '1607371725956675966',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                originalMessage: {
+                    html: 'comment updated without mention',
+                    whisperedTo: [],
+                    lastModified: '2024-11-19 08:04:13.728',
+                },
+                message: [{html: 'comment updated without mention', text: 'comment updated without mention', type: 'COMMENT', whisperedTo: []}],
+            };
+            const whisperAction: ReportAction = {
+                created: '2024-11-19 08:04:13.730',
+                reportActionID: '1607371725956675967',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                originalMessage: {
+                    inviteeEmails: ['userb@expensify.com'],
+                    inviteeAccountIDs: [18414674],
+                    lastModified: '2024-11-19 08:04:25.813',
+                    whisperedTo: [18301266],
+                    deleted: '2024-11-19 08:04:27.000',
+                },
+                message: [
+                    {
+                        html: "Heads up, <mention-user>@userb@expensify.com</mention-user> isn't a member of this room.",
+                        text: "Heads up, @userb@expensify.com isn't a member of this room.",
+                        type: 'COMMENT',
+                    },
+                ],
+            };
+            const actionsForReport = buildReportActionsMap([parentAction, whisperAction]);
+
+            expect(ReportActionsUtils.isResolvedActionableWhisper(whisperAction, actionsForReport)).toBe(true);
+        });
+
+        it('should not treat deleted ACTIONABLE_MENTION_WHISPER as resolved when parentReportActionID points to alive parent', () => {
+            const parentAction: ReportAction = {
+                created: '2024-11-19 08:04:13.728',
+                reportActionID: '1607371725956675966',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                originalMessage: {
+                    html: '<mention-user accountID="18414674"/>',
+                    mentionedAccountIDs: [18414674],
+                    whisperedTo: [],
+                    lastModified: '2024-11-19 08:04:13.728',
+                },
+                message: [{html: '<mention-user accountID="18414674"/>', text: '@someone', type: 'COMMENT', whisperedTo: []}],
+            };
+            const whisperAction: ReportAction = {
+                created: '2024-11-19 08:04:13.730',
+                reportActionID: '7401435781029999',
+                reportID: '1',
+                actionName: CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER,
+                originalMessage: {
+                    deleted: '2024-11-19 08:04:27.000',
+                    parentReportActionID: parentAction.reportActionID,
+                    inviteeAccountIDs: [18414674],
+                    lastModified: '2024-11-19 08:04:25.813',
+                    whisperedTo: [18301266],
+                },
+                message: [
+                    {html: "Heads up, <mention-user accountID=18414674></mention-user> isn't a member of this room.", text: "Heads up,  isn't a member of this room.", type: 'COMMENT'},
+                ],
+            };
+            const actionsForReport = buildReportActionsMap([parentAction, whisperAction]);
+
+            expect(ReportActionsUtils.isResolvedActionableWhisper(whisperAction, actionsForReport)).toBe(false);
         });
     });
 

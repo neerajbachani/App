@@ -104,6 +104,7 @@ import {getCardDescriptionForSearchTable, getFeedNameForDisplay} from './CardUti
 import {getDecodedCategoryName} from './CategoryUtils';
 import DateUtils from './DateUtils';
 import interceptAnonymousUser from './interceptAnonymousUser';
+import Log from './Log';
 import isSearchTopmostFullScreenRoute from './Navigation/helpers/isSearchTopmostFullScreenRoute';
 import Navigation from './Navigation/Navigation';
 import Parser from './Parser';
@@ -122,6 +123,8 @@ import {
 import {
     getIOUActionForReportID,
     getOriginalMessage,
+    isActionableMentionWhisper,
+    isActionableReportMentionWhisper,
     isCreatedAction,
     isDeletedAction,
     isHoldAction,
@@ -2624,7 +2627,8 @@ function getReportActionsSections(data: OnyxTypes.SearchResults['data'], visible
     for (const key in data) {
         if (isReportActionEntry(key)) {
             const reportIDFromKey = key.replace(ONYXKEYS.COLLECTION.REPORT_ACTIONS, '');
-            const reportActions = Object.values(data[key]);
+            const reportActionsForReport = data[key] as OnyxTypes.ReportActions;
+            const reportActions = Object.values(reportActionsForReport);
             n += reportActions.length;
             for (const reportAction of reportActions) {
                 // Always use the container reportID so "In <chat name>" rows open the parent chat, not a child task/thread report.
@@ -2642,14 +2646,37 @@ function getReportActionsSections(data: OnyxTypes.SearchResults['data'], visible
                 const isReportArchived = isArchivedReport(data[`${ONYXKEYS.COLLECTION.REPORT_NAME_VALUE_PAIRS}${report.reportID}`]);
                 const invoiceReceiverPolicy: OnyxTypes.Policy | undefined =
                     report?.invoiceReceiver?.type === CONST.REPORT.INVOICE_RECEIVER_TYPE.BUSINESS ? data[`${ONYXKEYS.COLLECTION.POLICY}${report.invoiceReceiver.policyID}`] : undefined;
+                const isVisibleInReport = isReportActionVisible(
+                    reportAction,
+                    reportID,
+                    canUserPerformWriteAction(report, isReportArchived),
+                    visibleReportActionsData,
+                    reportActionsForReport,
+                );
+                const filteredByDeleted = isDeletedAction(reportAction);
+                const filteredByResolved = isResolvedActionableWhisper(reportAction, reportActionsForReport);
+                const filteredByTargeting = isWhisperActionTargetedToOthers(reportAction);
+                const isMentionWhisperAction = isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction);
+
+                if (isVisibleInReport && isMentionWhisperAction && (filteredByDeleted || filteredByResolved || filteredByTargeting)) {
+                    Log.info('[SearchMentionWhisperFilteredAfterVisibility]', false, {
+                        reportID,
+                        reportActionID: reportAction.reportActionID,
+                        actionName: reportAction.actionName,
+                        filteredByDeleted,
+                        filteredByResolved,
+                        filteredByTargeting,
+                    });
+                }
+
                 if (
                     !reportID ||
-                    !isReportActionVisible(reportAction, reportID, canUserPerformWriteAction(report, isReportArchived), visibleReportActionsData) ||
-                    isDeletedAction(reportAction) ||
-                    isResolvedActionableWhisper(reportAction) ||
+                    !isVisibleInReport ||
+                    filteredByDeleted ||
+                    filteredByResolved ||
                     reportAction.actionName === CONST.REPORT.ACTIONS.TYPE.CLOSED ||
                     isCreatedAction(reportAction) ||
-                    isWhisperActionTargetedToOthers(reportAction) ||
+                    filteredByTargeting ||
                     (isMoneyRequestAction(reportAction) && !!report?.isWaitingOnBankAccount && originalMessage?.type === CONST.IOU.REPORT_ACTION_TYPE.PAY && !isSendingMoney)
                 ) {
                     continue;

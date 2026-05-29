@@ -6,7 +6,7 @@ import {getCombinedReportActions, getFilteredReportActionsForReportView, isCreat
 import {isConciergeChatReport, isInvoiceReport, isMoneyRequestReport, isReportTransactionThread as isReportTransactionThreadUtil} from '@libs/ReportUtils';
 import getReportActionsToDisplay from '@pages/inbox/report/getReportActionsToDisplay';
 import ONYXKEYS from '@src/ONYXKEYS';
-import type {Pages, Report, ReportAction} from '@src/types/onyx';
+import type {Pages, Report, ReportAction, ReportActions} from '@src/types/onyx';
 import useIsInSidePanel from './useIsInSidePanel';
 import useNetwork from './useNetwork';
 import useOnyx from './useOnyx';
@@ -16,6 +16,7 @@ import useTransactionThread from './useTransactionThread';
 type UseReportActionsPaginationResult = {
     reportActions: ReportAction[];
     allReportActions: ReportAction[];
+    fullCachedReportActions: ReportAction[];
     allReportActionIDs: string[];
     hasOlderActions: boolean;
     hasNewerActions: boolean;
@@ -36,6 +37,7 @@ function useReportActionsPagination(reportID: string | undefined, reportActionID
     const [treatAsNoPaginationAnchor, setTreatAsNoPaginationAnchor] = useState(false);
     const nonEmptyReportIDForPages = getNonEmptyStringOnyxID(reportID);
     const [reportActionPages] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS_PAGES}${nonEmptyReportIDForPages}`);
+    const [allRawReportActions] = useOnyx<ReportActions>(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${nonEmptyReportIDForPages}`);
 
     const {
         reportActions: unfilteredReportActions,
@@ -48,6 +50,7 @@ function useReportActionsPagination(reportID: string | undefined, reportActionID
         treatAsNoPaginationAnchor,
     });
     const allReportActions = useMemo(() => getFilteredReportActionsForReportView(unfilteredReportActions), [unfilteredReportActions]);
+    const fullCachedReportActions = useMemo(() => getFilteredReportActionsForReportView(Object.values(allRawReportActions ?? {})), [allRawReportActions]);
 
     const thread = useTransactionThread({reportID, report, allReportActions, isOffline});
 
@@ -82,6 +85,7 @@ function useReportActionsPagination(reportID: string | undefined, reportActionID
     return {
         reportActions,
         allReportActions,
+        fullCachedReportActions,
         allReportActionIDs,
         hasOlderActions,
         hasNewerActions,

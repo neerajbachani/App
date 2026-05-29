@@ -196,7 +196,7 @@ function isCreatedAction(reportAction: OnyxInputOrEntry<ReportAction>): boolean 
 }
 
 function isDeletedAction(reportAction: OnyxInputOrEntry<ReportAction | OptimisticIOUReportAction>): boolean {
-    if (isInviteOrRemovedAction(reportAction) || isActionableMentionWhisper(reportAction) || isActionableCardFraudAlert(reportAction)) {
+    if (isInviteOrRemovedAction(reportAction) || isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction) || isActionableCardFraudAlert(reportAction)) {
         return false;
     }
 
@@ -1143,6 +1143,89 @@ function isActionableWhisper(
     );
 }
 
+function getMentionWhisperParentActionID(reportAction: OnyxEntry<ReportAction>): string | undefined {
+    if (!reportAction?.reportActionID) {
+        return undefined;
+    }
+
+    const originalMessage = getOriginalMessage(reportAction) as {parentReportActionID?: string} | undefined;
+    if (originalMessage?.parentReportActionID) {
+        return originalMessage.parentReportActionID;
+    }
+
+    try {
+        const parentOffset = isActionableReportMentionWhisper(reportAction) ? 2n : 1n;
+        return String(BigInt(reportAction.reportActionID) - parentOffset);
+    } catch {
+        Log.hmmm('Unable to resolve mention whisper parent action ID', undefined, {
+            reportID: reportAction.reportID,
+            reportActionID: reportAction.reportActionID,
+            actionName: reportAction.actionName,
+        });
+        return undefined;
+    }
+}
+
+function logMentionWhisperVisibilityDecision(
+    reportAction: OnyxEntry<ReportAction>,
+    canUserPerformWriteAction: boolean | undefined,
+    decisionReason: string,
+    parentContextSource: 'explicit_actions_map' | 'none' = 'none',
+    actionsForReport?: ReportActions,
+): void {
+    const originalMessage = getOriginalMessage(reportAction) as {deleted?: string | null; resolution?: string | null; parentReportActionID?: string} | undefined;
+    const resolvedParentActionID = getMentionWhisperParentActionID(reportAction);
+    Log.info('[MentionWhisperVisibilityDecision]', false, {
+        reportID: reportAction?.reportID,
+        reportActionID: reportAction?.reportActionID,
+        actionName: reportAction?.actionName,
+        resolution: originalMessage?.resolution ?? null,
+        deleted: originalMessage?.deleted ?? null,
+        parentReportActionID: originalMessage?.parentReportActionID ?? null,
+        resolvedParentActionID: resolvedParentActionID ?? null,
+        hasParentInExplicitMap: !!(resolvedParentActionID && actionsForReport?.[resolvedParentActionID]),
+        explicitMapActionCount: actionsForReport ? Object.keys(actionsForReport).length : null,
+        canUserPerformWriteAction: canUserPerformWriteAction ?? null,
+        parentContextSource,
+        decisionReason,
+    });
+}
+
+function getReportActionsMapFromInput(reportActions: OnyxEntry<ReportActions> | ReportAction[]): ReportActions {
+    if (Array.isArray(reportActions)) {
+        return reportActions.reduce<ReportActions>((acc, action) => {
+            if (action?.reportActionID) {
+                acc[action.reportActionID] = action;
+            }
+            return acc;
+        }, {});
+    }
+
+    return reportActions ?? {};
+}
+
+function doesParentCommentStillContainMentionInvitee(
+    parentAction: OnyxEntry<ReportAction>,
+    whisperAction: ReportAction<typeof CONST.REPORT.ACTIONS.TYPE.ACTIONABLE_MENTION_WHISPER>,
+): boolean {
+    if (!isActionOfType(parentAction, CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT)) {
+        return false;
+    }
+
+    const parentMentionedAccountIDs = new Set(getMentionedAccountIDsFromAction(parentAction));
+    const parentMessageHTML = getReportActionMessage(parentAction)?.html ?? '';
+    const mentionAccountIDRegex = /<mention-user accountID="?(\d+)"?(?: *\/>|><\/mention-user>)/gi;
+    const accountIDsFromMessageHTML = Array.from(parentMessageHTML.matchAll(mentionAccountIDRegex), (match) => Number(match[1]));
+    accountIDsFromMessageHTML.forEach((accountID) => parentMentionedAccountIDs.add(accountID));
+    const parentMentionedEmails = new Set(getMentionedEmailsFromMessage(parentMessageHTML).map((email) => Str.removeSMSDomain(email).toLowerCase()));
+
+    const whisperOriginalMessage = getOriginalMessage(whisperAction) as {inviteeAccountIDs?: number[]; inviteeEmails?: string[]} | undefined;
+    const hasMentionedInviteeAccountID = (whisperOriginalMessage?.inviteeAccountIDs ?? []).some((accountID) => parentMentionedAccountIDs.has(accountID));
+    const hasMentionedInviteeEmail = (whisperOriginalMessage?.inviteeEmails ?? []).some((email) => parentMentionedEmails.has(Str.removeSMSDomain(email).toLowerCase()));
+
+    return hasMentionedInviteeAccountID || hasMentionedInviteeEmail;
+}
+
 const {POLICY_CHANGE_LOG: policyChangelogTypes, ROOM_CHANGE_LOG: roomChangeLogTypes, ...otherActionTypes} = CONST.REPORT.ACTIONS.TYPE;
 const supportedActionTypes = new Set<ReportActionName>([...Object.values(otherActionTypes), ...Object.values(policyChangelogTypes), ...Object.values(roomChangeLogTypes)]);
 
@@ -1150,7 +1233,7 @@ const supportedActionTypes = new Set<ReportActionName>([...Object.values(otherAc
  * Checks whether an action is actionable track expense and resolved.
  *
  */
-function isResolvedActionableWhisper(reportAction: OnyxEntry<ReportAction>): boolean {
+function isResolvedActionableWhisper(reportAction: OnyxEntry<ReportAction>, actionsForReport?: ReportActions): boolean {
     const originalMessage = getOriginalMessage(reportAction);
     if (!originalMessage || typeof originalMessage !== 'object') {
         return false;
@@ -1163,6 +1246,27 @@ function isResolvedActionableWhisper(reportAction: OnyxEntry<ReportAction>): boo
     const deleted = 'deleted' in originalMessage ? originalMessage?.deleted : null;
     if (!deleted) {
         return false;
+    }
+
+    if (isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction)) {
+        if (!actionsForReport) {
+            return true;
+        }
+
+        const parentContextSource = 'explicit_actions_map';
+        const parentActionID = getMentionWhisperParentActionID(reportAction);
+        const parentAction = parentActionID ? actionsForReport[parentActionID] : undefined;
+
+        if (parentAction && !isDeletedAction(parentAction)) {
+            if (isActionableMentionWhisper(reportAction) && !doesParentCommentStillContainMentionInvitee(parentAction, reportAction)) {
+                logMentionWhisperVisibilityDecision(reportAction, undefined, 'parent_alive_mention_removed_hide', parentContextSource, actionsForReport);
+                return true;
+            }
+            logMentionWhisperVisibilityDecision(reportAction, undefined, 'parent_alive_keep_visible', parentContextSource, actionsForReport);
+            return false;
+        }
+
+        logMentionWhisperVisibilityDecision(reportAction, undefined, parentAction ? 'parent_deleted_hide' : 'no_parent_found_hide', parentContextSource, actionsForReport);
     }
 
     return true;
@@ -1190,7 +1294,7 @@ function isResolvedConciergeDescriptionOptions(reportAction: OnyxEntry<ReportAct
  * Checks if a reportAction is fit for display, meaning that it's not deprecated, is of a valid
  * and supported type, it's not deleted and also not closed.
  */
-function shouldReportActionBeVisible(reportAction: OnyxEntry<ReportAction>, key: string | number, canUserPerformWriteAction?: boolean): boolean {
+function shouldReportActionBeVisible(reportAction: OnyxEntry<ReportAction>, key: string | number, canUserPerformWriteAction?: boolean, actionsForReport?: ReportActions): boolean {
     if (!reportAction) {
         return false;
     }
@@ -1245,6 +1349,9 @@ function shouldReportActionBeVisible(reportAction: OnyxEntry<ReportAction>, key:
             isActionableCardFraudAlert(reportAction)) &&
         !canUserPerformWriteAction
     ) {
+        if (isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction)) {
+            logMentionWhisperVisibilityDecision(reportAction, canUserPerformWriteAction, 'no_write_permission', actionsForReport ? 'explicit_actions_map' : 'none', actionsForReport);
+        }
         return false;
     }
 
@@ -1253,7 +1360,10 @@ function shouldReportActionBeVisible(reportAction: OnyxEntry<ReportAction>, key:
     }
 
     // If action is actionable whisper and resolved by user, then we don't want to render anything
-    if (isActionableWhisper(reportAction) && isResolvedActionableWhisper(reportAction)) {
+    if (isActionableWhisper(reportAction) && isResolvedActionableWhisper(reportAction, actionsForReport)) {
+        if (isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction)) {
+            logMentionWhisperVisibilityDecision(reportAction, canUserPerformWriteAction, 'resolved_actionable_whisper', actionsForReport ? 'explicit_actions_map' : 'none', actionsForReport);
+        }
         return false;
     }
 
@@ -1292,6 +1402,7 @@ function isReportActionVisible(
     reportID: string | undefined,
     canUserPerformWriteAction?: boolean,
     visibleReportActions?: VisibleReportActionsDerivedValue,
+    actionsForReport?: ReportActions,
 ): boolean {
     if (!reportAction?.reportActionID) {
         return false;
@@ -1301,18 +1412,24 @@ function isReportActionVisible(
     // from what's cached in visibleReportActions (which reflects persisted Onyx data).
     // We must recalculate visibility at runtime to ensure accuracy for these transient states.
     if (reportAction.pendingAction) {
-        return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction);
+        return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction, actionsForReport);
+    }
+
+    // Mention whispers require parent-action context for deleted-flag disambiguation.
+    // Always recalculate at runtime when explicit per-report context is available.
+    if (actionsForReport && (isActionableMentionWhisper(reportAction) || isActionableReportMentionWhisper(reportAction))) {
+        return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction, actionsForReport);
     }
 
     if (visibleReportActions && reportID) {
         const reportCache = visibleReportActions[reportID];
         if (!reportCache) {
-            return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction);
+            return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction, actionsForReport);
         }
         const staticVisibility = reportCache[reportAction.reportActionID];
         // If action is not in derived value cache, fall back to runtime calculation
         if (staticVisibility === undefined) {
-            return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction);
+            return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction, actionsForReport);
         }
         if (!staticVisibility) {
             return false;
@@ -1322,7 +1439,7 @@ function isReportActionVisible(
         }
         return true;
     }
-    return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction);
+    return shouldReportActionBeVisible(reportAction, reportAction.reportActionID, canUserPerformWriteAction, actionsForReport);
 }
 
 /**
@@ -1578,10 +1695,12 @@ function getSortedReportActionsForDisplay(
         return [];
     }
 
+    const actionsForReport = getReportActionsMapFromInput(reportActions);
+
     if (shouldIncludeInvisibleActions) {
-        filteredReportActions = Object.values(reportActions).filter(Boolean);
+        filteredReportActions = Object.values(actionsForReport).filter(Boolean);
     } else {
-        filteredReportActions = Object.entries(reportActions)
+        filteredReportActions = Object.entries(actionsForReport)
             .filter(([collectionKey, reportAction]) => {
                 if (isReportActionDeprecated(reportAction, collectionKey)) {
                     return false;
@@ -1590,7 +1709,7 @@ function getSortedReportActionsForDisplay(
                 if (!actionReportID) {
                     return false;
                 }
-                return isReportActionVisible(reportAction, actionReportID, canUserPerformWriteAction, visibleReportActionsData);
+                return isReportActionVisible(reportAction, actionReportID, canUserPerformWriteAction, visibleReportActionsData, actionsForReport);
             })
             .map(([, reportAction]) => reportAction);
     }
@@ -4655,6 +4774,7 @@ export {
     isOldDotReportAction,
     isPayAction,
     isPendingRemove,
+    getMentionWhisperParentActionID,
     getModerationFlagState,
     isPolicyChangeLogAction,
     isReimbursementDeQueuedOrCanceledAction,
