@@ -1,0 +1,54 @@
+name: Build iOS Simulator App
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Install CocoaPods
+        run: npm run pod-install
+
+      - name: Build iOS Simulator .app
+        run: |
+          xcodebuild \
+            -workspace ios/NewExpensify.xcworkspace \
+            -scheme NewExpensify \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -arch x86_64 \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            | xcpretty
+
+      - name: Zip .app for upload
+        run: |
+          cd ios/build/Build/Products/Debug-iphonesimulator
+          zip -r NewExpensify.zip NewExpensify.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NewExpensify-simulator
+          path: ios/build/Build/Products/Debug-iphonesimulator/NewExpensify.zip
+          retention-days: 3
