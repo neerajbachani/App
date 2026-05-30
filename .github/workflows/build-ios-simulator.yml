@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,6 +27,12 @@ jobs:
       - name: Install CocoaPods
         run: npm run pod-install
 
+      - name: Install xcpretty
+        run: gem install xcpretty
+
+      - name: List available schemes
+        run: xcodebuild -workspace ios/NewExpensify.xcworkspace -list
+
       - name: Build iOS Simulator .app
         run: |
           xcodebuild \
@@ -35,16 +40,19 @@ jobs:
             -scheme NewExpensify \
             -configuration Debug \
             -sdk iphonesimulator \
-            -arch x86_64 \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
             -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            | xcpretty
+            build 2>&1 | xcpretty
 
-      - name: Zip .app for upload
+      - name: Find built app
+        run: find ios/build -name "*.app" -type d
+
+      - name: Zip .app
         run: |
           cd ios/build/Build/Products/Debug-iphonesimulator
-          zip -r NewExpensify.zip NewExpensify.app
+          zip -r NewExpensify.zip *.app
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
