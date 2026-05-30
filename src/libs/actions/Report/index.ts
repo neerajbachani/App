@@ -4893,6 +4893,20 @@ function leaveRoom(
         Navigation.dismissModal();
         return;
     }
+
+    // Leaving a chat thread: navigate to the parent conversation. When a modal (RHP) is open, reveal the
+    // parent report under it before dismissing to avoid the iOS blank-frame regression (#83787). Otherwise goBack.
+    if (isChatThread && report.parentReportID) {
+        const parentRoute = ROUTES.REPORT_WITH_ID.getRoute(report.parentReportID);
+
+        if (Navigation.isTopmostRouteModalScreen()) {
+            Navigation.revealRouteBeforeDismissingModal(parentRoute);
+        } else {
+            Navigation.goBack(parentRoute);
+        }
+        return;
+    }
+
     // In other cases, the report is deleted and we should move the user to another report.
     navigateToMostRecentReport(report, conciergeReportID, currentUserAccountID, introSelected, betas);
 }

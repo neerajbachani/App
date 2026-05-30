@@ -131,6 +131,8 @@ jest.mock('@libs/Navigation/Navigation', () => ({
     getTopmostSuperWideRHPReportID: jest.fn(() => undefined),
     goBack: jest.fn(),
     popToSidebar: jest.fn(),
+    revealRouteBeforeDismissingModal: jest.fn(),
+    isTopmostRouteModalScreen: jest.fn(() => false),
     navigationRef: {
         getRootState: jest.fn(() => ({routes: []})),
         isReady: jest.fn(() => true),
@@ -6413,7 +6415,7 @@ describe('actions/Report', () => {
             TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
         });
 
-        it('should navigate to concierge when leaving a chat thread and no other report exists', async () => {
+        it('should navigate to parent report when leaving a chat thread', async () => {
             TestHelper.getGlobalFetchMock();
 
             const PARENT_REPORT_ID = '2002';
@@ -6433,11 +6435,10 @@ describe('actions/Report', () => {
             await Onyx.merge(ONYXKEYS.SESSION, {accountID: TEST_CURRENT_USER_ACCOUNT_ID});
             await waitForBatchedUpdates();
 
-            // Chat thread with no other report → navigateToMostRecentReport calls navigateToConciergeChat without goBack
             Report.leaveRoom(threadReport, TEST_CURRENT_USER_ACCOUNT_ID, TEST_CONCIERGE_REPORT_ID, TEST_INTRO_SELECTED, undefined, false);
             await waitForBatchedUpdates();
 
-            // For chat threads, goBack should NOT be called before navigating to concierge (the isChatThread branch)
+            expect(mockNavigation.goBack).toHaveBeenCalledWith(ROUTES.REPORT_WITH_ID.getRoute(PARENT_REPORT_ID));
             TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
         });
     });
@@ -6518,7 +6519,12 @@ describe('actions/Report', () => {
         it('should dismiss modal when workspace member leaves a non-thread workspace room', async () => {
             TestHelper.getGlobalFetchMock();
 
-            const mockNavigation: {dismissModal: jest.Mock; goBack: jest.Mock; navigate: jest.Mock} = jest.requireMock('@libs/Navigation/Navigation');
+            const mockNavigation: {
+                dismissModal: jest.Mock;
+                goBack: jest.Mock;
+                navigate: jest.Mock;
+                revealRouteBeforeDismissingModal: jest.Mock;
+            } = jest.requireMock('@libs/Navigation/Navigation');
             mockNavigation.dismissModal.mockClear();
 
             const roomReport = {
@@ -6536,14 +6542,21 @@ describe('actions/Report', () => {
             await waitForBatchedUpdates();
 
             expect(mockNavigation.dismissModal).toHaveBeenCalled();
+            expect(mockNavigation.goBack).not.toHaveBeenCalled();
+            expect(mockNavigation.revealRouteBeforeDismissingModal).not.toHaveBeenCalled();
             TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
         });
 
         it('should NOT dismiss modal when workspace member leaves a chat thread in workspace room', async () => {
             TestHelper.getGlobalFetchMock();
 
-            const mockNavigation: {dismissModal: jest.Mock} = jest.requireMock('@libs/Navigation/Navigation');
+            const mockNavigation: {
+                dismissModal: jest.Mock;
+                goBack: jest.Mock;
+                revealRouteBeforeDismissingModal: jest.Mock;
+            } = jest.requireMock('@libs/Navigation/Navigation');
             mockNavigation.dismissModal.mockClear();
+            mockNavigation.goBack.mockClear();
 
             const PARENT_REPORT_ID = '2002';
             const PARENT_REPORT_ACTION_ID = '3001';
@@ -6562,10 +6575,84 @@ describe('actions/Report', () => {
             await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${ROOM_REPORT_ID}`, threadReport);
             await waitForBatchedUpdates();
 
-            // isWorkspaceMemberLeavingWorkspaceRoom=true but report IS a chat thread → should NOT dismissModal, should navigateToMostRecentReport instead
+            // isWorkspaceMemberLeavingWorkspaceRoom=true but report IS a chat thread → navigate to parent, not dismissModal
             Report.leaveRoom(threadReport, TEST_CURRENT_USER_ACCOUNT_ID, TEST_CONCIERGE_REPORT_ID, TEST_INTRO_SELECTED, undefined, true);
             await waitForBatchedUpdates();
 
+            expect(mockNavigation.dismissModal).not.toHaveBeenCalled();
+            expect(mockNavigation.goBack).toHaveBeenCalledWith(ROUTES.REPORT_WITH_ID.getRoute(PARENT_REPORT_ID));
+            expect(mockNavigation.revealRouteBeforeDismissingModal).not.toHaveBeenCalled();
+            TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
+        });
+    });
+
+    describe('leaveRoom chat thread navigation', () => {
+        const THREAD_REPORT_ID = '2001';
+        const PARENT_REPORT_ID = '2002';
+        const PARENT_REPORT_ACTION_ID = '3001';
+
+        const mockNavigation: {
+            dismissModal: jest.Mock;
+            goBack: jest.Mock;
+            revealRouteBeforeDismissingModal: jest.Mock;
+            isTopmostRouteModalScreen: jest.Mock;
+        } = jest.requireMock('@libs/Navigation/Navigation');
+
+        beforeEach(async () => {
+            jest.clearAllMocks();
+            mockNavigation.isTopmostRouteModalScreen.mockReturnValue(false);
+            await Onyx.clear();
+            await waitForBatchedUpdates();
+        });
+
+        it('should reveal parent report under modal when leaving a chat thread with modal open', async () => {
+            TestHelper.getGlobalFetchMock();
+            mockNavigation.isTopmostRouteModalScreen.mockReturnValue(true);
+
+            const threadReport = {
+                ...createRandomReport(Number(THREAD_REPORT_ID), undefined),
+                type: CONST.REPORT.TYPE.CHAT,
+                parentReportID: PARENT_REPORT_ID,
+                parentReportActionID: PARENT_REPORT_ACTION_ID,
+                participants: {
+                    [TEST_CURRENT_USER_ACCOUNT_ID]: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                },
+            };
+
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${THREAD_REPORT_ID}`, threadReport);
+            await waitForBatchedUpdates();
+
+            Report.leaveRoom(threadReport, TEST_CURRENT_USER_ACCOUNT_ID, TEST_CONCIERGE_REPORT_ID, TEST_INTRO_SELECTED, undefined, false);
+            await waitForBatchedUpdates();
+
+            expect(mockNavigation.revealRouteBeforeDismissingModal).toHaveBeenCalledWith(ROUTES.REPORT_WITH_ID.getRoute(PARENT_REPORT_ID));
+            expect(mockNavigation.dismissModal).not.toHaveBeenCalled();
+            expect(mockNavigation.goBack).not.toHaveBeenCalled();
+            TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
+        });
+
+        it('should goBack to parent report when leaving a chat thread without modal open', async () => {
+            TestHelper.getGlobalFetchMock();
+            mockNavigation.isTopmostRouteModalScreen.mockReturnValue(false);
+
+            const threadReport = {
+                ...createRandomReport(Number(THREAD_REPORT_ID), undefined),
+                type: CONST.REPORT.TYPE.CHAT,
+                parentReportID: PARENT_REPORT_ID,
+                parentReportActionID: PARENT_REPORT_ACTION_ID,
+                participants: {
+                    [TEST_CURRENT_USER_ACCOUNT_ID]: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                },
+            };
+
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${THREAD_REPORT_ID}`, threadReport);
+            await waitForBatchedUpdates();
+
+            Report.leaveRoom(threadReport, TEST_CURRENT_USER_ACCOUNT_ID, TEST_CONCIERGE_REPORT_ID, TEST_INTRO_SELECTED, undefined, false);
+            await waitForBatchedUpdates();
+
+            expect(mockNavigation.goBack).toHaveBeenCalledWith(ROUTES.REPORT_WITH_ID.getRoute(PARENT_REPORT_ID));
+            expect(mockNavigation.revealRouteBeforeDismissingModal).not.toHaveBeenCalled();
             expect(mockNavigation.dismissModal).not.toHaveBeenCalled();
             TestHelper.expectAPICommandToHaveBeenCalled(WRITE_COMMANDS.LEAVE_ROOM, 1);
         });
