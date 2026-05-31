@@ -31,7 +31,6 @@ jobs:
         run: gem install xcpretty
 
       - name: Build iOS Simulator .app
-        continue-on-error: true
         run: |
           xcodebuild \
             -workspace ios/NewExpensify.xcworkspace \
@@ -42,35 +41,22 @@ jobs:
             -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            SWIFT_STRICT_CONCURRENCY=minimal \
+            OTHER_SWIFT_FLAGS="-Xfrontend -warn-concurrency" \
             build 2>&1 | xcpretty --color
-
-      - name: Debug build output
-        if: always()
-        run: |
-          echo "=== ios/build contents ==="
-          ls -la ios/build/ || echo "ios/build missing"
-          echo "=== Products dir ==="
-          ls -la ios/build/Build/Products/ || echo "Products dir missing"
-          echo "=== Debug-iphonesimulator ==="
-          ls -lah ios/build/Build/Products/Debug-iphonesimulator/ || echo "Debug-iphonesimulator missing"
-          echo "=== Finding .app ==="
-          APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
-          echo "APP_PATH=$APP_PATH"
-          echo "=== App size ==="
-          du -sh "$APP_PATH" || echo "Cannot measure size"
 
       - name: Zip and upload .app
         if: always()
         run: |
           APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
-          echo "Zipping: $APP_PATH"
+          echo "App path: $APP_PATH"
+          echo "App size: $(du -sh "$APP_PATH" 2>/dev/null)"
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app found"
             exit 1
           fi
           cd "$(dirname "$APP_PATH")"
           zip -r "$GITHUB_WORKSPACE/NewExpensify.zip" "$(basename "$APP_PATH")"
-          echo "=== Zip size ==="
           ls -lh "$GITHUB_WORKSPACE/NewExpensify.zip"
 
       - name: Upload artifact
