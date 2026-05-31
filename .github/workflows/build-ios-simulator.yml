@@ -45,6 +45,7 @@ jobs:
             build 2>&1 | xcpretty --color
 
       - name: Zip .app
+        if: always()
         run: |
           APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
@@ -57,6 +58,7 @@ jobs:
           echo "Zip created successfully"
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: NewExpensify-simulator
