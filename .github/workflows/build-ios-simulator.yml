@@ -27,14 +27,14 @@ jobs:
       - name: Install CocoaPods
         run: npm run pod-install
 
-      - name: Patch ExpoModulesCore Swift version
+      - name: Patch expo-modules-core Swift concurrency issue
         run: |
-          PODSPEC="ios/Pods/Target Support Files/ExpoModulesCore/ExpoModulesCore.debug.xcconfig"
-          echo "=== Patching Swift version for ExpoModulesCore ==="
-          # Add Swift 5 language version to override Swift 6 strict concurrency
-          echo "SWIFT_VERSION = 5.0" >> "ios/Pods/Target Support Files/ExpoModulesCore/ExpoModulesCore.debug.xcconfig" || true
-          echo "SWIFT_STRICT_CONCURRENCY = minimal" >> "ios/Pods/Target Support Files/ExpoModulesCore/ExpoModulesCore.debug.xcconfig" || true
-          echo "Done patching"
+          FILE="node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift"
+          echo "=== Before patch ==="
+          sed -n '158,162p' "$FILE"
+          sed -i '' 's/assert(props\.children?\.count == children\.count - 1/let _cnt = props.children?.count; assert(_cnt == children.count - 1/g' "$FILE"
+          echo "=== After patch ==="
+          sed -n '158,162p' "$FILE"
 
       - name: Build iOS Simulator .app
         continue-on-error: true
@@ -48,8 +48,6 @@ jobs:
             -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            SWIFT_VERSION=5.0 \
-            SWIFT_STRICT_CONCURRENCY=minimal \
             build 2>&1 | tee /tmp/xcodebuild.log
           echo "=== EXIT CODE: ${PIPESTATUS[0]} ==="
 
@@ -58,8 +56,8 @@ jobs:
         run: |
           echo "=== REAL COMPILER ERRORS ==="
           grep ": error:" /tmp/xcodebuild.log | grep -v "NSError\|Logger\|stat:\|error:(NSError" | head -30
-          echo "=== LAST 5 LINES ==="
-          tail -5 /tmp/xcodebuild.log
+          echo "=== LAST 10 LINES OF BUILD LOG ==="
+          tail -10 /tmp/xcodebuild.log
           echo "=== APP SIZE ==="
           APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
           echo "APP_PATH=$APP_PATH"
@@ -76,7 +74,7 @@ jobs:
           ACTUAL_SIZE=$(du -sk "$APP_PATH" | cut -f1)
           echo "App size: ${ACTUAL_SIZE} KB"
           if [ "$ACTUAL_SIZE" -lt 1000 ]; then
-            echo "ERROR: App too small (${ACTUAL_SIZE} KB)"
+            echo "ERROR: App is too small (${ACTUAL_SIZE} KB) - build failed"
             exit 1
           fi
           cd "$(dirname "$APP_PATH")"
