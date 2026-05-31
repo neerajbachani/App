@@ -30,6 +30,15 @@ jobs:
       - name: Install xcpretty
         run: gem install xcpretty
 
+      - name: Patch expo-modules-core Swift concurrency issue
+        run: |
+          FILE="node_modules/expo-modules-core/ios/Core/Views/SwiftUI/SwiftUIVirtualView.swift"
+          echo "=== Before patch (line 158-162) ==="
+          sed -n '158,162p' "$FILE"
+          sed -i '' 's/assert(props\.children?\.count == children\.count - 1/let _cnt = props.children?.count; assert(_cnt == children.count - 1/g' "$FILE"
+          echo "=== After patch ==="
+          sed -n '158,162p' "$FILE"
+
       - name: Build iOS Simulator .app
         run: |
           xcodebuild \
@@ -41,8 +50,6 @@ jobs:
             -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            SWIFT_STRICT_CONCURRENCY=minimal \
-            OTHER_SWIFT_FLAGS="-Xfrontend -warn-concurrency" \
             build 2>&1 | xcpretty --color
 
       - name: Zip and upload .app
