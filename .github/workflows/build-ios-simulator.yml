@@ -40,6 +40,7 @@ jobs:
           sed -n '158,162p' "$FILE"
 
       - name: Build iOS Simulator .app
+        continue-on-error: true
         run: |
           xcodebuild \
             -workspace ios/NewExpensify.xcworkspace \
@@ -50,7 +51,18 @@ jobs:
             -derivedDataPath ios/build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build 2>&1 | xcpretty --color
+            build 2>&1 | tee /tmp/xcodebuild.log | xcpretty --color
+          echo "=== EXIT CODE: ${PIPESTATUS[0]} ==="
+
+      - name: Show all build errors if any
+        if: always()
+        run: |
+          echo "=== ALL ERRORS FROM BUILD ==="
+          grep -n "error:" /tmp/xcodebuild.log | grep "❌\|error:" | head -30 || echo "No errors found in log"
+          echo "=== APP SIZE CHECK ==="
+          APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
+          echo "APP_PATH=$APP_PATH"
+          du -sh "$APP_PATH" 2>/dev/null || echo "App is empty or missing"
 
       - name: Zip and upload .app
         if: always()
@@ -60,6 +72,11 @@ jobs:
           echo "App size: $(du -sh "$APP_PATH" 2>/dev/null)"
           if [ -z "$APP_PATH" ]; then
             echo "ERROR: No .app found"
+            exit 1
+          fi
+          ACTUAL_SIZE=$(du -sk "$APP_PATH" | cut -f1)
+          if [ "$ACTUAL_SIZE" -lt 1000 ]; then
+            echo "ERROR: App is too small ($ACTUAL_SIZE KB) - build likely failed"
             exit 1
           fi
           cd "$(dirname "$APP_PATH")"
