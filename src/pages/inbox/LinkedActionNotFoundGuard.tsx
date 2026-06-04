@@ -14,7 +14,6 @@ import Navigation from '@libs/Navigation/Navigation';
 import {isReportActionVisible, isWhisperAction} from '@libs/ReportActionsUtils';
 import {canUserPerformWriteAction} from '@libs/ReportUtils';
 import ONYXKEYS from '@src/ONYXKEYS';
-import ROUTES from '@src/ROUTES';
 import {getReportActionByIDSelector} from '@src/selectors/ReportAction';
 import {isLoadingInitialReportActionsSelector} from '@src/selectors/ReportMetaData';
 import type {ReportActions} from '@src/types/onyx';
@@ -174,12 +173,27 @@ function LinkedActionNotFoundGate({reportActionIDFromRoute, children}: LinkedAct
     }, [isLinkedActionInaccessibleWhisper, route.key, navigatorKey]);
 
     const navigateToEndOfReport = () => {
+        Log.info('[LinkedActionNotFoundGuard] Navigating to end of report (clearing reportActionID)', false, {
+            reportIDFromRoute,
+            reportActionIDFromRoute,
+            routeKey: route.key,
+            navigatorKey,
+        });
         Navigation.setParams({reportActionID: undefined}, route.key, navigatorKey);
     };
 
-    // Just go back where we came from if there's navigation history. If there is no history, fallback to the report for
-    // this action.
-    const goBack = () => (canGoBack() ? Navigation.goBack() : Navigation.goBack(ROUTES.REPORT_WITH_ID.getRoute(reportIDFromRoute)));
+    // Clear the deep-link param instead of Navigation.goBack() so we stay on the same Report screen
+    // (matches "Go to chat instead" and avoids stack POP to Inbox when PUSH_PARAMS history is missing).
+    const goBackFromLinkedActionNotFound = () => {
+        Log.info('[LinkedActionNotFoundGuard] Back pressed on linked-action-not-found', false, {
+            reportIDFromRoute,
+            reportActionIDFromRoute,
+            routeKey: route.key,
+            navigatorKey,
+            canGoBack: canGoBack(),
+        });
+        navigateToEndOfReport();
+    };
 
     return (
         <FullPageNotFoundView
@@ -187,7 +201,7 @@ function LinkedActionNotFoundGate({reportActionIDFromRoute, children}: LinkedAct
             subtitleKey="notFound.commentYouLookingForCannotBeFound"
             subtitleStyle={[styles.textSupporting]}
             shouldShowBackButton={shouldUseNarrowLayout}
-            onBackButtonPress={goBack}
+            onBackButtonPress={goBackFromLinkedActionNotFound}
             shouldShowLink
             linkTranslationKey="notFound.goToChatInstead"
             subtitleKeyBelowLink="notFound.contactConcierge"

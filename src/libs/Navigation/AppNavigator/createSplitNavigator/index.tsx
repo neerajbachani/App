@@ -1,6 +1,7 @@
 import type {NavigationProp, NavigatorTypeBagBase, ParamListBase, StaticConfig, TypedNavigator} from '@react-navigation/native';
 import {createNavigatorFactory} from '@react-navigation/native';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
+import addPushParamsRouterExtension from '@libs/Navigation/AppNavigator/routerExtensions/addPushParamsRouterExtension';
 import useNavigationResetOnLayoutChange from '@libs/Navigation/AppNavigator/useNavigationResetOnLayoutChange';
 import createPlatformStackNavigatorComponent from '@libs/Navigation/PlatformStackNavigation/createPlatformStackNavigatorComponent';
 import defaultPlatformStackScreenOptions from '@libs/Navigation/PlatformStackNavigation/defaultPlatformStackScreenOptions';
@@ -36,7 +37,7 @@ function useCustomSplitNavigatorState({state}: CustomStateHookProps) {
 }
 
 const SplitNavigatorComponent = createPlatformStackNavigatorComponent('SplitNavigator', {
-    createRouter: SplitRouter,
+    createRouter: addPushParamsRouterExtension(SplitRouter),
     useCustomEffects,
     defaultScreenOptions: defaultPlatformStackScreenOptions,
     useCustomState: useCustomSplitNavigatorState,

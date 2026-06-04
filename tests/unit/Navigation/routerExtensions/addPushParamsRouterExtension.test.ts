@@ -152,6 +152,57 @@ describe('addPushParamsRouterExtension', () => {
         expect((lastHistoryEntry.params as {q: string}).q).toBe('updated');
     });
 
+    it('PUSH_PARAMS merges history from incoming state when inner setParams omits history, and GO_BACK reverts params without popping routes', () => {
+        const factory = createMockRouterFactory((state, action) => {
+            if (action.type === 'SET_PARAMS') {
+                const routes = [...state.routes];
+                const focused = routes.at(state.index);
+                if (!focused) {
+                    return state;
+                }
+                routes[state.index] = {
+                    ...focused,
+                    params: {...(focused.params as Record<string, unknown>), ...(action.payload as {params?: Record<string, unknown>}).params},
+                } as NavigationRoute<ParamListBase, string>;
+                // Deliberately omit history — mirrors real StackRouter setParams behavior.
+                return makeState(routes);
+            }
+
+            if (action.type === 'GO_BACK' || action.type === 'POP') {
+                if (state.routes.length <= 1) {
+                    return null;
+                }
+                return makeState(state.routes.slice(0, -1));
+            }
+
+            return state;
+        });
+        const enhancedRouter = addPushParamsRouterExtension(factory)({} as PlatformStackRouterOptions);
+
+        const route = makeRoute('Report', 'report-1', {reportID: '111'});
+        const state = makeState([route], {
+            history: [{...route}] as CustomHistoryEntry[],
+        });
+
+        const pushParamsAction: PushParamsRouterAction = {
+            type: CONST.NAVIGATION.ACTION_TYPE.PUSH_PARAMS,
+            payload: {params: {reportID: '111', reportActionID: '222'}},
+        };
+
+        const stateAfterPush = enhancedRouter.getStateForAction(state, pushParamsAction, CONFIG_OPTIONS);
+
+        expect(stateAfterPush).not.toBeNull();
+        expect((stateAfterPush?.routes.at(0)?.params as {reportActionID?: string}).reportActionID).toBe('222');
+        expect(stateAfterPush?.history?.length).toBeGreaterThan(stateAfterPush?.routes.length ?? 0);
+
+        const goBackAction = CommonActions.goBack();
+        const stateAfterBack = enhancedRouter.getStateForAction(stateAfterPush as TestState, goBackAction, CONFIG_OPTIONS);
+
+        expect(stateAfterBack).not.toBeNull();
+        expect(stateAfterBack?.routes).toHaveLength(1);
+        expect((stateAfterBack?.routes.at(0)?.params as {reportActionID?: string}).reportActionID).toBeUndefined();
+    });
+
     it('GO_BACK with surplus history (same key) reverts params to previous snapshot and pops history', () => {
         const factory = createMockRouterFactory();
         const enhancedRouter = addPushParamsRouterExtension(factory)({} as PlatformStackRouterOptions);

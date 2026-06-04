@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment */
-import {act, render} from '@testing-library/react-native';
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+import {act, fireEvent, render, screen} from '@testing-library/react-native';
 import React from 'react';
 import {View} from 'react-native';
 import CONST from '@src/CONST';
@@ -12,6 +12,7 @@ const ROUTE_KEY = 'test-route-key';
 const NAVIGATOR_KEY = 'test-navigator-key';
 
 const mockSetParams = jest.fn();
+const mockGoBack = jest.fn();
 const mockCleanStaleBackToParam = jest.fn();
 const mockIsNavigationReady = jest.fn(() => Promise.resolve());
 
@@ -19,6 +20,7 @@ jest.mock('@libs/Navigation/Navigation', () => ({
     __esModule: true,
     default: {
         setParams: (...args: unknown[]) => mockSetParams(...args),
+        goBack: (...args: unknown[]) => mockGoBack(...args),
         getActiveRouteWithoutParams: jest.fn(() => ''),
         isNavigationReady: () => mockIsNavigationReady(),
     },
@@ -61,8 +63,30 @@ jest.mock('@hooks/useReportIsArchived', () => ({
 
 jest.mock('@hooks/useResponsiveLayout', () => ({
     __esModule: true,
-    default: () => ({shouldUseNarrowLayout: false}),
+    default: () => ({shouldUseNarrowLayout: mockShouldUseNarrowLayout}),
 }));
+
+let mockShouldUseNarrowLayout = false;
+
+jest.mock('@hooks/useLazyAsset', () => ({
+    useMemoizedLazyIllustrations: jest.fn(() => ({ToddBehindCloud: jest.fn()})),
+}));
+
+jest.mock('@libs/actions/StatsCounter', () => jest.fn());
+
+jest.mock('@components/HeaderWithBackButton', () => {
+    const React = require('react');
+    const {Pressable, Text} = require('react-native');
+
+    function MockHeaderWithBackButton({onBackButtonPress, shouldShowBackButton}: {onBackButtonPress?: () => void; shouldShowBackButton?: boolean}) {
+        if (!shouldShowBackButton) {
+            return null;
+        }
+        return React.createElement(Pressable, {testID: 'linked-action-not-found-back', onPress: onBackButtonPress}, React.createElement(Text, null, 'Back'));
+    }
+    MockHeaderWithBackButton.displayName = 'HeaderWithBackButton';
+    return MockHeaderWithBackButton;
+});
 
 jest.mock('@libs/ReportActionsUtils', () => ({
     ...jest.requireActual('@libs/ReportActionsUtils'),
@@ -116,8 +140,10 @@ function TestChildren() {
 describe('LinkedActionNotFoundGuard', () => {
     beforeEach(() => {
         mockSetParams.mockClear();
+        mockGoBack.mockClear();
         mockCleanStaleBackToParam.mockClear();
         mockIsNavigationReady.mockClear();
+        mockShouldUseNarrowLayout = false;
         mockRouteParams.reportID = REPORT_ID;
         mockRouteParams.reportActionID = REPORT_ACTION_ID;
         mockLinkedAction = createReportAction();
@@ -232,5 +258,32 @@ describe('LinkedActionNotFoundGuard', () => {
 
         // Should not navigate away while loading — the action might come back
         expect(mockSetParams).not.toHaveBeenCalled();
+    });
+
+    it('clears reportActionID on back press when linked action not found (does not call Navigation.goBack)', () => {
+        mockShouldUseNarrowLayout = true;
+        mockLinkedAction = null;
+        mockIsLoadingInitialReportActions = true;
+
+        const {rerender} = render(
+            <LinkedActionNotFoundGuard>
+                <TestChildren />
+            </LinkedActionNotFoundGuard>,
+        );
+
+        act(() => {
+            mockIsLoadingInitialReportActions = false;
+        });
+
+        rerender(
+            <LinkedActionNotFoundGuard>
+                <TestChildren />
+            </LinkedActionNotFoundGuard>,
+        );
+
+        fireEvent.press(screen.getByTestID('linked-action-not-found-back'));
+
+        expect(mockSetParams).toHaveBeenCalledWith({reportActionID: undefined}, ROUTE_KEY, NAVIGATOR_KEY);
+        expect(mockGoBack).not.toHaveBeenCalled();
     });
 });

@@ -1,6 +1,7 @@
 import {CommonActions} from '@react-navigation/native';
 import type {NavigationRoute, ParamListBase, PartialState, Router, RouterConfigOptions, StackActionType} from '@react-navigation/native';
 import compoundParamsKey from '@libs/compoundParamsKey';
+import Log from '@libs/Log';
 import type {PlatformStackNavigationState, PlatformStackRouterFactory, PlatformStackRouterOptions} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {GoBackAction, SetParamsAction} from '@libs/Navigation/types';
 import {cancelPendingFocusRestore, notifyPushParamsBackward, notifyPushParamsForward} from '@libs/NavigationFocusReturn';
@@ -143,10 +144,15 @@ function addPushParamsRouterExtension<RouterOptions extends PlatformStackRouterO
                 const setParamsAction = CommonActions.setParams(action.payload.params);
                 const stateWithUpdatedParams = router.getStateForAction(state, setParamsAction, configOptions);
 
-                if (!stateWithUpdatedParams?.history) {
-                    // Skip capture — the update didn't commit usable history, so any captured trigger would be orphan.
-                    return stateWithUpdatedParams;
+                if (!stateWithUpdatedParams) {
+                    Log.info('[PushParamsRouter] PUSH_PARAMS rejected — inner setParams returned null', false, {
+                        incomingParams: action.payload.params,
+                    });
+                    return null;
                 }
+
+                // Inner StackRouter setParams does not preserve our custom history — merge from incoming state.
+                const existingHistory = stateWithUpdatedParams.history ?? state.history ?? (enhanceStateWithHistory(stateWithUpdatedParams).history as CustomHistoryEntry[] | undefined);
 
                 // setParams targets routes[state.index]; capture must follow or GO_BACK's compound-key lookup misses when focus is non-terminal (post-RESET).
                 const outgoingRoute = state.routes.at(state.index) ?? state.routes.at(-1);
@@ -157,16 +163,33 @@ function addPushParamsRouterExtension<RouterOptions extends PlatformStackRouterO
                 // `index` is typed optional on partial state — at(-1) fallback recovers the last route.
                 const focusedRoute = stateWithUpdatedParams.routes.at(stateWithUpdatedParams.index ?? -1) ?? stateWithUpdatedParams.routes.at(-1);
 
-                if (focusedRoute) {
+                if (focusedRoute && existingHistory) {
                     // Mirror window.history.pushState: pushing mid-cursor discards forward entries.
-                    const existingHistory = stateWithUpdatedParams.history;
                     const baseHistory =
                         pushParamsHistoryPosition >= 0 && pushParamsHistoryPosition < existingHistory.length - 1 ? existingHistory.slice(0, pushParamsHistoryPosition + 1) : existingHistory;
                     // No FIFO cap — useLinking decides push/replace by history.length delta; a fixed cap forces replaceState past the bound.
                     const newHistory = [...baseHistory, focusedRoute];
                     pushParamsHistoryPosition = newHistory.length - 1;
+
+                    Log.info('[PushParamsRouter] PUSH_PARAMS appended param snapshot', false, {
+                        outgoingParams: outgoingRoute?.params,
+                        incomingParams: action.payload.params,
+                        focusedRouteKey: focusedRoute.key,
+                        historyLengthBefore: existingHistory.length,
+                        historyLengthAfter: newHistory.length,
+                        routesLength: stateWithUpdatedParams.routes.length,
+                        cursor: pushParamsHistoryPosition,
+                        mergedHistoryFromIncomingState: !stateWithUpdatedParams.history && !!state.history,
+                    });
+
                     return {...stateWithUpdatedParams, history: newHistory};
                 }
+
+                Log.info('[PushParamsRouter] PUSH_PARAMS could not append snapshot', false, {
+                    incomingParams: action.payload.params,
+                    hasFocusedRoute: !!focusedRoute,
+                    hasExistingHistory: !!existingHistory,
+                });
 
                 return stateWithUpdatedParams;
             }
@@ -174,8 +197,17 @@ function addPushParamsRouterExtension<RouterOptions extends PlatformStackRouterO
             // No browser history on native — intercept GO_BACK/POP to revert params to the prior snapshot (what the browser does via popstate on web).
             if ((isGoBackAction(action) || isPopAction(action)) && state.history) {
                 const routeHistoryEntries = state.history.filter((entry): entry is NavigationRoute<ParamListBase, string> => typeof entry !== 'string');
+                const hasSurplusHistory = routeHistoryEntries.length > state.routes.length;
 
-                if (routeHistoryEntries.length > state.routes.length) {
+                Log.info('[PushParamsRouter] GO_BACK/POP received', false, {
+                    actionType: action.type,
+                    routeHistoryEntriesLength: routeHistoryEntries.length,
+                    routesLength: state.routes.length,
+                    hasSurplusHistory,
+                    cursor: pushParamsHistoryPosition,
+                });
+
+                if (hasSurplusHistory) {
                     // Index-based, not at(-1) — must match the key PUSH_PARAMS captured under.
                     const focusedRoute = state.routes.at(state.index) ?? state.routes.at(-1);
                     if (focusedRoute) {
@@ -212,12 +244,27 @@ function addPushParamsRouterExtension<RouterOptions extends PlatformStackRouterO
                                 const newHistory = cursorAtEnd ? history.slice(0, -1) : history;
                                 pushParamsHistoryPosition = prevIdx;
 
+                                Log.info('[PushParamsRouter] GO_BACK/POP reverted params via param history', false, {
+                                    focusedRouteKey: focusedRoute.key,
+                                    currentIdx,
+                                    prevIdx,
+                                    targetParams,
+                                    routesLengthAfter: routes.length,
+                                    historyLengthAfter: newHistory.length,
+                                });
+
                                 return {
                                     ...state,
                                     routes,
                                     history: newHistory,
                                 };
                             }
+
+                            Log.info('[PushParamsRouter] GO_BACK/POP surplus history but no prior snapshot for focused route', false, {
+                                focusedRouteKey: focusedRoute.key,
+                                currentIdx,
+                                prevIdx,
+                            });
                         }
                     }
                 }
@@ -230,6 +277,13 @@ function addPushParamsRouterExtension<RouterOptions extends PlatformStackRouterO
                 const preservedHistory = preserveHistoryForRoutes(state.history as CustomHistoryEntry[], newState.routes);
                 // Sync cursor to the focused entry of the filtered history — same invariant as the fall-through path.
                 pushParamsHistoryPosition = preservedHistory.length > 0 ? preservedHistory.length - 1 : -1;
+
+                Log.info('[PushParamsRouter] GO_BACK/POP fell through to stack POP', false, {
+                    routesLengthBefore: state.routes.length,
+                    routesLengthAfter: newState.routes.length,
+                    preservedHistoryLength: preservedHistory.length,
+                });
+
                 return {
                     ...newState,
                     history: preservedHistory,
