@@ -6995,7 +6995,10 @@ const CONST = {
             SEARCH: 'searchItem',
             FIND_ITEM: 'findItem',
             ASK_CONCIERGE: 'askConcierge',
+            NAVIGATE: 'navigate',
         },
+        NAVIGATION_SUGGESTION_MIN_QUERY_LENGTH: 3,
+        MAX_NAVIGATION_SUGGESTIONS: 8,
         SEARCH_USER_FRIENDLY_KEYS: {
             TYPE: 'type',
             STATUS: 'status',

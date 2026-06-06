@@ -1,11 +1,12 @@
 import {hasSeenTourSelector, isTrackIntentUserSelector} from '@selectors/Onboarding';
 import {deepEqual} from 'fast-equals';
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import type {TextInputProps} from 'react-native';
 // eslint-disable-next-line no-restricted-imports
 import {InteractionManager, View} from 'react-native';
 import type {ValueOf} from 'type-fest';
 import HeaderWithBackButton from '@components/HeaderWithBackButton';
+import type {ExpensifyIconName} from '@components/Icon/ExpensifyIconLoader';
 import {usePersonalDetails} from '@components/OnyxListItemProvider';
 import type {AnimatedTextInputRef} from '@components/RNTextInput';
 import DeferredAutocompleteList from '@components/Search/DeferredSearchAutocompleteList';
@@ -25,6 +26,7 @@ import useOnyx from '@hooks/useOnyx';
 import useReportOrReportDraft from '@hooks/useReportOrReportDraft';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useRootNavigationState from '@hooks/useRootNavigationState';
+import useSearchTypeMenuSections from '@hooks/useSearchTypeMenuSections';
 import useSortedActions from '@hooks/useSortedActions';
 import useThemeStyles from '@hooks/useThemeStyles';
 import {scrollToRight} from '@libs/InputUtils';
@@ -39,6 +41,8 @@ import {getAutocompleteQueryWithComma, getTrimmedUserSearchQueryPreservingComma}
 import {getQueryWithUpdatedValues, sanitizeSearchValue} from '@libs/SearchQueryUtils';
 import StringUtils from '@libs/StringUtils';
 import Navigation from '@navigation/Navigation';
+import {ACCOUNT_SEARCH_ROUTER_ICON_NAMES} from '@pages/settings/accountSearchRouterEntries';
+import {WORKSPACE_SEARCH_ROUTER_ICON_NAMES} from '@pages/workspace/workspaceSearchRouterEntries';
 import variables from '@styles/variables';
 import {navigateToAndOpenReport, searchInServer} from '@userActions/Report';
 import {setSearchContext} from '@userActions/Search';
@@ -46,13 +50,22 @@ import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import ROUTES from '@src/ROUTES';
 import type Report from '@src/types/onyx/Report';
+import {filterAndRankNavigationEntries} from './filterAndRankNavigationEntries';
 import type {SubstitutionMap} from './getQueryWithSubstitutions';
 import {getQueryWithSubstitutions} from './getQueryWithSubstitutions';
 import {getUpdatedSubstitutionsMap} from './getUpdatedSubstitutionsMap';
+import {
+    getSpendNavigationIconNames,
+    isSpendSearchRootRoute,
+    navigationCatalogEntriesToSearchQueryItems,
+    shouldShowNavigationSuggestions,
+    TOP_LEVEL_NAVIGATION_ICON_NAMES,
+} from './navigationCatalogUtils';
 import {clearPendingRouterQuery, peekPendingRouterQuery} from './SearchRouterContext';
 import {getContextualReportData, getContextualSearchAutocompleteKey, getContextualSearchQuery} from './SearchRouterUtils';
 import updateAutocompleteSubstitutionsForSelection from './updateAutocompleteSubstitutionsForSelection';
 import useAskConcierge from './useAskConcierge';
+import useNavigationSearchCatalog from './useNavigationSearchCatalog';
 
 const privateIsArchivedSelector = (nvp: {private_isArchived?: string} | undefined): boolean | undefined => !!nvp?.private_isArchived;
 
@@ -69,7 +82,9 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
     const {setShouldResetSearchQuery} = useSearchQueryActions();
     const currentUserPersonalDetails = useCurrentUserPersonalDetails();
     const currentUserAccountID = currentUserPersonalDetails.accountID;
+    const currentUserEmail = currentUserPersonalDetails.login;
     const [isSearchingForReports] = useOnyx(ONYXKEYS.RAM_ONLY_IS_SEARCHING_FOR_REPORTS);
+    const [policies] = useOnyx(ONYXKEYS.COLLECTION.POLICY);
     const [introSelected] = useOnyx(ONYXKEYS.NVP_INTRO_SELECTED);
     const [betas] = useOnyx(ONYXKEYS.BETAS);
     const [isSelfTourViewed] = useOnyx(ONYXKEYS.NVP_ONBOARDING, {selector: hasSeenTourSelector});
@@ -78,7 +93,23 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
     const sortedActions = useSortedActions();
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const listRef = useRef<SelectionListWithSectionsHandle>(null);
-    const expensifyIcons = useMemoizedLazyExpensifyIcons(['MagnifyingGlass', 'ConciergeAvatar']);
+    const {typeMenuSections} = useSearchTypeMenuSections();
+    const navigationCatalog = useNavigationSearchCatalog({currentUserEmail, policies});
+    const iconNames = useMemo(
+        () =>
+            [
+                'MagnifyingGlass',
+                'ConciergeAvatar',
+                ...TOP_LEVEL_NAVIGATION_ICON_NAMES,
+                ...ACCOUNT_SEARCH_ROUTER_ICON_NAMES,
+                ...WORKSPACE_SEARCH_ROUTER_ICON_NAMES,
+                'User',
+                'ReceiptMultiple',
+                ...getSpendNavigationIconNames(typeMenuSections),
+            ] as ExpensifyIconName[],
+        [typeMenuSections],
+    );
+    const expensifyIcons = useMemoizedLazyExpensifyIcons(iconNames);
     const {askConcierge, shouldShowAskConcierge} = useAskConcierge();
 
     const initialQuery = peekPendingRouterQuery();
@@ -121,6 +152,15 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
 
     const getAdditionalSections: GetAdditionalSectionsCallback = useCallback(
         ({recentReports}, sectionIndex) => {
+            const trimmedQuery = textInputValue.trim();
+
+            if (shouldShowNavigationSuggestions(trimmedQuery)) {
+                const rankedEntries = filterAndRankNavigationEntries(trimmedQuery, navigationCatalog, translate, CONST.SEARCH.MAX_NAVIGATION_SUGGESTIONS);
+                const navigationItems = navigationCatalogEntriesToSearchQueryItems(rankedEntries, translate, expensifyIcons);
+
+                return navigationItems.length > 0 ? [{sectionIndex, data: navigationItems}] : undefined;
+            }
+
             if (!contextualReportID) {
                 return undefined;
             }
@@ -213,7 +253,8 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
             isSearchRouterDisplayed,
             isSearchRouterScreen,
             translate,
-            expensifyIcons.MagnifyingGlass,
+            expensifyIcons,
+            navigationCatalog,
             styles.activeComponentBG,
             contextualReport,
             personalDetails,
@@ -315,6 +356,27 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
             };
 
             if (isSearchQueryItem(item)) {
+                if (item.searchItemType === CONST.SEARCH.SEARCH_ROUTER_ITEM_TYPE.NAVIGATE && item.onSelectAction) {
+                    const {onSelectAction} = item;
+                    backHistory(() => {
+                        onRouterClose();
+                        onSelectAction();
+                    });
+                    return;
+                }
+
+                if (item.searchItemType === CONST.SEARCH.SEARCH_ROUTER_ITEM_TYPE.NAVIGATE && item.route) {
+                    const {route} = item;
+                    backHistory(() => {
+                        onRouterClose();
+                        if (isSpendSearchRootRoute(route)) {
+                            setSearchContext(false);
+                        }
+                        Navigation.navigate(route);
+                    });
+                    return;
+                }
+
                 if (!item.searchQuery) {
                     return;
                 }
