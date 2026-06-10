@@ -1,5 +1,5 @@
 import type {NavigationAction} from '@react-navigation/native';
-import {useNavigation} from '@react-navigation/native';
+import {findFocusedRoute, useNavigation} from '@react-navigation/native';
 import {useCallback, useEffect, useRef} from 'react';
 import {ModalActions} from '@components/Modal/Global/ModalContext';
 import useBeforeRemove from '@hooks/useBeforeRemove';
@@ -11,7 +11,25 @@ import navigateAfterInteraction from '@libs/Navigation/navigateAfterInteraction'
 import navigationRef from '@libs/Navigation/navigationRef';
 import type {PlatformStackNavigationProp} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {RootNavigatorParamList} from '@libs/Navigation/types';
+import CONST from '@src/CONST';
 import type UseDiscardChangesConfirmationOptions from './types';
+
+const DISCARD_NAV_DEBUG_PREFIX = '[DiscardNavDebug]';
+
+function getHistoryLength() {
+    return window.history.length;
+}
+
+function shouldReplayBlockedAction(action: NavigationAction) {
+    return action.type === CONST.NAVIGATION.ACTION_TYPE.GO_BACK || action.type === CONST.NAVIGATION.ACTION_TYPE.POP || action.type === CONST.NAVIGATION.ACTION_TYPE.RESET;
+}
+
+function logDiscardNavDebug(message: string, extraData: Record<string, unknown> = {}) {
+    Log.info(`${DISCARD_NAV_DEBUG_PREFIX} ${message}`, false, {
+        historyLength: getHistoryLength(),
+        ...extraData,
+    });
+}
 
 function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibilityChange, onConfirm}: UseDiscardChangesConfirmationOptions) {
     const navigation = useNavigation<PlatformStackNavigationProp<RootNavigatorParamList>>();
@@ -22,6 +40,11 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
     const shouldIgnoreNextBeforeRemove = useRef(false);
     const clearShouldIgnoreNextBeforeRemoveTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const isDiscardModalOpen = useRef(false);
+    // True while replaying navigation after the user confirmed discard in the modal.
+    // transitionStart must not run window.history.go(1) for this app-initiated back.
+    const isConfirmedNavigation = useRef(false);
+    // True when beforeRemove blocked a web URL-sync RESET; confirm uses goBack instead of replaying RESET.
+    const isBlockedResetNavigation = useRef(false);
 
     const clearShouldIgnoreNextBeforeRemove = useCallback(() => {
         if (clearShouldIgnoreNextBeforeRemoveTimeout.current) {
@@ -46,18 +69,105 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
         }, 250);
     }, []);
 
-    const navigateBack = useCallback(() => {
-        if (blockedNavigationAction.current) {
-            navigationRef.current?.dispatch(blockedNavigationAction.current);
-            return;
-        }
-        if (!shouldNavigateBack.current) {
-            return;
-        }
-        navigationRef.current?.goBack();
+    const getDebugSnapshot = useCallback((extraData: Record<string, unknown> = {}) => {
+        const rootState = navigationRef.current?.getRootState();
+        const focusedRouteName = rootState ? findFocusedRoute(rootState)?.name : undefined;
+
+        return {
+            pathName: window.location.pathname,
+            search: window.location.search,
+            hash: window.location.hash,
+            shouldGoBackState: (window.history.state as {shouldGoBack?: boolean} | null)?.shouldGoBack,
+            focusedRouteName,
+            shouldNavigateBack: shouldNavigateBack.current,
+            isConfirmedNavigation: isConfirmedNavigation.current,
+            isBlockedResetNavigation: isBlockedResetNavigation.current,
+            ...extraData,
+        };
     }, []);
 
+    const logPostConfirmSettledState = useCallback(
+        (source: string, shouldClearConfirmedNavigation = false) => {
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    const wasConfirmedNavigation = isConfirmedNavigation.current;
+                    if (shouldClearConfirmedNavigation) {
+                        isConfirmedNavigation.current = false;
+                    }
+                    logDiscardNavDebug('post-confirm settled state', getDebugSnapshot({source}));
+                    if (shouldClearConfirmedNavigation) {
+                        logDiscardNavDebug('post-confirm confirmed flag cleanup', {
+                            source,
+                            wasConfirmedNavigation,
+                            ...getDebugSnapshot(),
+                        });
+                    }
+                }, 0);
+            });
+        },
+        [getDebugSnapshot],
+    );
+
+    const resetNavigationGuards = useCallback(() => {
+        blockedNavigationAction.current = undefined;
+        shouldNavigateBack.current = false;
+        isConfirmedNavigation.current = false;
+        isBlockedResetNavigation.current = false;
+    }, []);
+
+    const navigateBack = useCallback(() => {
+        isConfirmedNavigation.current = true;
+
+        if (blockedNavigationAction.current) {
+            const blockedAction = blockedNavigationAction.current;
+            const blockedActionType = blockedAction.type;
+            blockedNavigationAction.current = undefined;
+
+            if (shouldReplayBlockedAction(blockedAction)) {
+                logDiscardNavDebug('navigateBack dispatchBlockedAction', {
+                    navigationStrategy: 'dispatchBlockedAction',
+                    blockedActionType,
+                    ...getDebugSnapshot(),
+                });
+                navigationRef.current?.dispatch(blockedAction);
+                isBlockedResetNavigation.current = false;
+                logPostConfirmSettledState('dispatchBlockedAction', true);
+                return;
+            }
+
+            logDiscardNavDebug('navigateBack goBackFallback', {
+                navigationStrategy: 'goBackFallback',
+                blockedActionType,
+                ...getDebugSnapshot(),
+            });
+            navigationRef.current?.goBack();
+            isBlockedResetNavigation.current = false;
+            logPostConfirmSettledState('goBackFallback', true);
+            return;
+        }
+
+        if (!shouldNavigateBack.current) {
+            logDiscardNavDebug('navigateBack noop (shouldNavigateBack false)', {
+                ...getDebugSnapshot(),
+            });
+            isConfirmedNavigation.current = false;
+            return;
+        }
+
+        logDiscardNavDebug('navigateBack calling goBack', {
+            navigationStrategy: 'goBack',
+            ...getDebugSnapshot(),
+        });
+        navigationRef.current?.goBack();
+        logPostConfirmSettledState('goBack', true);
+    }, [getDebugSnapshot, logPostConfirmSettledState]);
+
     const showDiscardModal = useCallback(() => {
+        logDiscardNavDebug('showDiscardModal', {
+            hasBlockedAction: !!blockedNavigationAction.current,
+            blockedActionType: blockedNavigationAction.current?.type,
+            ...getDebugSnapshot(),
+        });
         isDiscardModalOpen.current = true;
         onVisibilityChange?.(true);
         showConfirmModal({
@@ -66,29 +176,39 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
             danger: true,
             confirmText: translate('discardChangesConfirmation.confirmText'),
             cancelText: translate('common.cancel'),
+            shouldHandleNavigationBack: false,
             shouldIgnoreBackHandlerDuringTransition: true,
         }).then((result) => {
             markNextBeforeRemoveAsModalCleanup();
             isDiscardModalOpen.current = false;
             onVisibilityChange?.(false);
+            logDiscardNavDebug('discard modal result', {
+                action: result.action,
+                blockedActionType: blockedNavigationAction.current?.type,
+                ...getDebugSnapshot(),
+            });
+
             if (result.action === ModalActions.CONFIRM) {
                 Promise.resolve()
                     .then(() => onConfirm?.())
                     .then(() => {
+                        logDiscardNavDebug('scheduling navigateBack after confirm', {
+                            blockedActionType: blockedNavigationAction.current?.type,
+                            ...getDebugSnapshot(),
+                        });
                         setNavigationActionToMicrotaskQueue(navigateBack);
                     })
                     .catch((error: unknown) => {
                         Log.warn('[useDiscardChangesConfirmation] Failed to run onConfirm callback', {error});
-                        blockedNavigationAction.current = undefined;
-                        shouldNavigateBack.current = false;
+                        resetNavigationGuards();
                     });
             } else {
-                blockedNavigationAction.current = undefined;
-                shouldNavigateBack.current = false;
+                logDiscardNavDebug('discard cancelled');
+                resetNavigationGuards();
                 onCancel?.();
             }
         });
-    }, [showConfirmModal, translate, navigateBack, onCancel, onConfirm, onVisibilityChange, markNextBeforeRemoveAsModalCleanup]);
+    }, [showConfirmModal, translate, navigateBack, onCancel, onConfirm, onVisibilityChange, markNextBeforeRemoveAsModalCleanup, resetNavigationGuards, getDebugSnapshot]);
 
     useBeforeRemove((e) => {
         const hasUnsavedChanges = getHasUnsavedChanges();
@@ -103,11 +223,18 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
             return;
         }
 
-        if (shouldNavigateBack.current) {
+        if (shouldNavigateBack.current || isConfirmedNavigation.current) {
             clearShouldIgnoreNextBeforeRemove();
             return;
         }
 
+        const blockedActionType = e.data.action.type;
+        isBlockedResetNavigation.current = blockedActionType === CONST.NAVIGATION.ACTION_TYPE.RESET;
+
+        logDiscardNavDebug('beforeRemove intercepted', {
+            blockedActionType,
+            ...getDebugSnapshot(),
+        });
         e.preventDefault();
         blockedNavigationAction.current = e.data.action;
         navigateAfterInteraction(showDiscardModal);
@@ -120,20 +247,43 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
      */
     useEffect(() => {
         const unsubscribe = navigation.addListener('transitionStart', ({data: {closing}}) => {
-            if (!getHasUnsavedChanges()) {
+            const hasUnsavedChanges = getHasUnsavedChanges();
+
+            if (isConfirmedNavigation.current || isBlockedResetNavigation.current) {
+                logDiscardNavDebug('transitionStart skip history recovery (confirmed navigation)', {
+                    closing,
+                    hasUnsavedChanges,
+                    ...getDebugSnapshot(),
+                });
+                isConfirmedNavigation.current = false;
+                isBlockedResetNavigation.current = false;
                 return;
             }
+
+            if (!hasUnsavedChanges) {
+                return;
+            }
+
             shouldNavigateBack.current = true;
+            logDiscardNavDebug('transitionStart run history recovery', {
+                closing,
+                ...getDebugSnapshot(),
+            });
+
             if (closing) {
                 window.history.go(1);
                 return;
             }
+
             window.history.go(1);
             navigateAfterInteraction(showDiscardModal);
         });
 
-        return unsubscribe;
-    }, [navigation, getHasUnsavedChanges, showDiscardModal]);
+        return () => {
+            unsubscribe();
+            resetNavigationGuards();
+        };
+    }, [navigation, getHasUnsavedChanges, showDiscardModal, resetNavigationGuards, getDebugSnapshot]);
 
     useEffect(() => clearShouldIgnoreNextBeforeRemove, [clearShouldIgnoreNextBeforeRemove]);
 }
