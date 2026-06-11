@@ -179,7 +179,6 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
             shouldHandleNavigationBack: false,
             shouldIgnoreBackHandlerDuringTransition: true,
         }).then((result) => {
-            markNextBeforeRemoveAsModalCleanup();
             isDiscardModalOpen.current = false;
             onVisibilityChange?.(false);
             logDiscardNavDebug('discard modal result', {
@@ -203,6 +202,7 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
                         resetNavigationGuards();
                     });
             } else {
+                markNextBeforeRemoveAsModalCleanup();
                 logDiscardNavDebug('discard cancelled');
                 resetNavigationGuards();
                 onCancel?.();
@@ -217,14 +217,14 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
             return;
         }
 
-        if (isDiscardModalOpen.current || shouldIgnoreNextBeforeRemove.current) {
+        if (shouldNavigateBack.current || isConfirmedNavigation.current) {
             clearShouldIgnoreNextBeforeRemove();
-            e.preventDefault();
             return;
         }
 
-        if (shouldNavigateBack.current || isConfirmedNavigation.current) {
+        if (isDiscardModalOpen.current || shouldIgnoreNextBeforeRemove.current) {
             clearShouldIgnoreNextBeforeRemove();
+            e.preventDefault();
             return;
         }
 
