@@ -45,6 +45,8 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
     const isConfirmedNavigation = useRef(false);
     // True when beforeRemove blocked a web URL-sync RESET; confirm uses goBack instead of replaying RESET.
     const isBlockedResetNavigation = useRef(false);
+    const getHasUnsavedChangesRef = useRef(getHasUnsavedChanges);
+    getHasUnsavedChangesRef.current = getHasUnsavedChanges;
 
     const clearShouldIgnoreNextBeforeRemove = useCallback(() => {
         if (clearShouldIgnoreNextBeforeRemoveTimeout.current) {
@@ -115,52 +117,56 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
         isBlockedResetNavigation.current = false;
     }, []);
 
-    const navigateBack = useCallback(() => {
-        isConfirmedNavigation.current = true;
+    const navigateBack = useCallback(
+        (capturedBlockedAction?: NavigationAction, capturedShouldNavigateBack?: boolean) => {
+            isConfirmedNavigation.current = true;
 
-        if (blockedNavigationAction.current) {
-            const blockedAction = blockedNavigationAction.current;
-            const blockedActionType = blockedAction.type;
-            blockedNavigationAction.current = undefined;
+            const blockedAction = capturedBlockedAction ?? blockedNavigationAction.current;
+            if (blockedAction) {
+                const blockedActionType = blockedAction.type;
+                blockedNavigationAction.current = undefined;
 
-            if (shouldReplayBlockedAction(blockedAction)) {
-                logDiscardNavDebug('navigateBack dispatchBlockedAction', {
-                    navigationStrategy: 'dispatchBlockedAction',
+                if (shouldReplayBlockedAction(blockedAction)) {
+                    logDiscardNavDebug('navigateBack dispatchBlockedAction', {
+                        navigationStrategy: 'dispatchBlockedAction',
+                        blockedActionType,
+                        ...getDebugSnapshot(),
+                    });
+                    navigationRef.current?.dispatch(blockedAction);
+                    isBlockedResetNavigation.current = false;
+                    logPostConfirmSettledState('dispatchBlockedAction', true);
+                    return;
+                }
+
+                logDiscardNavDebug('navigateBack goBackFallback', {
+                    navigationStrategy: 'goBackFallback',
                     blockedActionType,
                     ...getDebugSnapshot(),
                 });
-                navigationRef.current?.dispatch(blockedAction);
+                navigationRef.current?.goBack();
                 isBlockedResetNavigation.current = false;
-                logPostConfirmSettledState('dispatchBlockedAction', true);
+                logPostConfirmSettledState('goBackFallback', true);
                 return;
             }
 
-            logDiscardNavDebug('navigateBack goBackFallback', {
-                navigationStrategy: 'goBackFallback',
-                blockedActionType,
+            const shouldGoBack = capturedShouldNavigateBack ?? shouldNavigateBack.current;
+            if (!shouldGoBack) {
+                logDiscardNavDebug('navigateBack noop (shouldNavigateBack false)', {
+                    ...getDebugSnapshot(),
+                });
+                isConfirmedNavigation.current = false;
+                return;
+            }
+
+            logDiscardNavDebug('navigateBack calling goBack', {
+                navigationStrategy: 'goBack',
                 ...getDebugSnapshot(),
             });
             navigationRef.current?.goBack();
-            isBlockedResetNavigation.current = false;
-            logPostConfirmSettledState('goBackFallback', true);
-            return;
-        }
-
-        if (!shouldNavigateBack.current) {
-            logDiscardNavDebug('navigateBack noop (shouldNavigateBack false)', {
-                ...getDebugSnapshot(),
-            });
-            isConfirmedNavigation.current = false;
-            return;
-        }
-
-        logDiscardNavDebug('navigateBack calling goBack', {
-            navigationStrategy: 'goBack',
-            ...getDebugSnapshot(),
-        });
-        navigationRef.current?.goBack();
-        logPostConfirmSettledState('goBack', true);
-    }, [getDebugSnapshot, logPostConfirmSettledState]);
+            logPostConfirmSettledState('goBack', true);
+        },
+        [getDebugSnapshot, logPostConfirmSettledState],
+    );
 
     const showDiscardModal = useCallback(() => {
         logDiscardNavDebug('showDiscardModal', {
@@ -181,27 +187,38 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
         }).then((result) => {
             isDiscardModalOpen.current = false;
             onVisibilityChange?.(false);
-            logDiscardNavDebug('discard modal result', {
-                action: result.action,
-                blockedActionType: blockedNavigationAction.current?.type,
-                ...getDebugSnapshot(),
-            });
 
             if (result.action === ModalActions.CONFIRM) {
+                const confirmedBlockedAction = blockedNavigationAction.current;
+                const confirmedShouldNavigateBack = shouldNavigateBack.current;
+
+                logDiscardNavDebug('discard modal result', {
+                    action: result.action,
+                    blockedActionType: confirmedBlockedAction?.type,
+                    ...getDebugSnapshot(),
+                });
+
                 Promise.resolve()
                     .then(() => onConfirm?.())
                     .then(() => {
                         logDiscardNavDebug('scheduling navigateBack after confirm', {
-                            blockedActionType: blockedNavigationAction.current?.type,
+                            blockedActionType: confirmedBlockedAction?.type,
                             ...getDebugSnapshot(),
                         });
-                        setNavigationActionToMicrotaskQueue(navigateBack);
+                        setNavigationActionToMicrotaskQueue(() => {
+                            navigateBack(confirmedBlockedAction, confirmedShouldNavigateBack);
+                        });
                     })
                     .catch((error: unknown) => {
                         Log.warn('[useDiscardChangesConfirmation] Failed to run onConfirm callback', {error});
                         resetNavigationGuards();
                     });
             } else {
+                logDiscardNavDebug('discard modal result', {
+                    action: result.action,
+                    blockedActionType: blockedNavigationAction.current?.type,
+                    ...getDebugSnapshot(),
+                });
                 markNextBeforeRemoveAsModalCleanup();
                 logDiscardNavDebug('discard cancelled');
                 resetNavigationGuards();
@@ -247,7 +264,7 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
      */
     useEffect(() => {
         const unsubscribe = navigation.addListener('transitionStart', ({data: {closing}}) => {
-            const hasUnsavedChanges = getHasUnsavedChanges();
+            const hasUnsavedChanges = getHasUnsavedChangesRef.current();
 
             if (isConfirmedNavigation.current || isBlockedResetNavigation.current) {
                 logDiscardNavDebug('transitionStart skip history recovery (confirmed navigation)', {
@@ -279,11 +296,8 @@ function useDiscardChangesConfirmation({getHasUnsavedChanges, onCancel, onVisibi
             navigateAfterInteraction(showDiscardModal);
         });
 
-        return () => {
-            unsubscribe();
-            resetNavigationGuards();
-        };
-    }, [navigation, getHasUnsavedChanges, showDiscardModal, resetNavigationGuards, getDebugSnapshot]);
+        return unsubscribe;
+    }, [navigation, showDiscardModal, getDebugSnapshot]);
 
     useEffect(() => clearShouldIgnoreNextBeforeRemove, [clearShouldIgnoreNextBeforeRemove]);
 }
