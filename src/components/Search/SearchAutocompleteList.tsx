@@ -675,6 +675,7 @@ function SearchAutocompleteList({
             shouldHighlightInitiallyFocusedItem={!shouldUseNarrowLayout}
             shouldScrollToFocusedIndex={!isInitialRender}
             disableKeyboardShortcuts={!shouldSubscribeToArrowKeyEvents}
+            searchValueForFocusSync={autocompleteQueryValue}
             addBottomSafeAreaPadding
             onLayout={() => {
                 endSpan(CONST.TELEMETRY.SPAN_SEARCH_ROUTER_LIST_RENDER);

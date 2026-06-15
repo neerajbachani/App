@@ -56,6 +56,7 @@ jest.mock('@src/libs/Navigation/Navigation', () => ({
     isNavigationReady: jest.fn(() => Promise.resolve()),
     isDisplayedInModal: jest.fn(() => false),
     navigate: jest.fn(),
+    setNavigationActionToMicrotaskQueue: jest.fn((callback: () => void) => callback()),
 }));
 
 jest.mock('@src/hooks/useRootNavigationState', () => ({

@@ -359,21 +359,25 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
                 if (item.searchItemType === CONST.SEARCH.SEARCH_ROUTER_ITEM_TYPE.NAVIGATE && item.onSelectAction) {
                     const {onSelectAction} = item;
                     backHistory(() => {
-                        onRouterClose();
-                        onSelectAction();
+                        Navigation.setNavigationActionToMicrotaskQueue(() => {
+                            onSelectAction();
+                        });
                     });
+                    onRouterClose();
                     return;
                 }
 
                 if (item.searchItemType === CONST.SEARCH.SEARCH_ROUTER_ITEM_TYPE.NAVIGATE && item.route) {
                     const {route} = item;
                     backHistory(() => {
-                        onRouterClose();
-                        if (isSpendSearchRootRoute(route)) {
-                            setSearchContext(false);
-                        }
-                        Navigation.navigate(route);
+                        Navigation.setNavigationActionToMicrotaskQueue(() => {
+                            if (isSpendSearchRootRoute(route)) {
+                                setSearchContext(false);
+                            }
+                            Navigation.navigate(route);
+                        });
                     });
+                    onRouterClose();
                     return;
                 }
 
