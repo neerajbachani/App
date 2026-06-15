@@ -45,6 +45,11 @@ describe('filterAndRankNavigationEntries', () => {
             shouldUseGoToPrefix: false,
             keywords: ['expense'],
         },
+        {
+            id: 'spend-top-spenders',
+            category: 'spend',
+            title: 'Top spenders',
+        },
     ];
 
     it('returns no matches for short or empty queries', () => {
@@ -70,6 +75,28 @@ describe('filterAndRankNavigationEntries', () => {
     it('matches create-menu keywords', () => {
         const results = filterAndRankNavigationEntries('expense', catalog, translate, CONST.SEARCH.MAX_NAVIGATION_SUGGESTIONS);
         expect(results.some((entry) => entry.id === 'create-expense')).toBe(true);
+    });
+
+    it('strips go to prefix before matching destinations', () => {
+        const results = filterAndRankNavigationEntries('go to top', catalog, translate, CONST.SEARCH.MAX_NAVIGATION_SUGGESTIONS);
+        expect(results.at(0)?.id).toBe('spend-top-spenders');
+    });
+
+    it('strips go prefix before matching destinations', () => {
+        const results = filterAndRankNavigationEntries('go top', catalog, translate, CONST.SEARCH.MAX_NAVIGATION_SUGGESTIONS);
+        expect(results.at(0)?.id).toBe('spend-top-spenders');
+    });
+
+    it('returns capped navigation rows for bare go to intent', () => {
+        const results = filterAndRankNavigationEntries('go to', catalog, translate, 3);
+        expect(results).toHaveLength(3);
+        expect(results.at(0)?.category).toBe('topLevel');
+    });
+
+    it('returns capped navigation rows for bare go intent', () => {
+        const results = filterAndRankNavigationEntries('go', catalog, translate, 3);
+        expect(results).toHaveLength(3);
+        expect(results.at(0)?.category).toBe('topLevel');
     });
 });
 

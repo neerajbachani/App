@@ -7,7 +7,7 @@ import CONST from '@src/CONST';
 import type {TranslationPaths} from '@src/languages/types';
 import ROUTES from '@src/ROUTES';
 import type IconAsset from '@src/types/utils/IconAsset';
-import {getEntryTitle} from './filterAndRankNavigationEntries';
+import {getEntryTitle, isBareNavigationIntentQuery, normalizeForMatch} from './filterAndRankNavigationEntries';
 import type {NavigationCatalogEntry} from './navigationCatalogTypes';
 
 const TOP_LEVEL_NAVIGATION_ENTRIES: Array<{
@@ -112,7 +112,17 @@ function isSpendSearchRootRoute(route: string): boolean {
 }
 
 function shouldShowNavigationSuggestions(query: string): boolean {
-    return query.trim().length >= CONST.SEARCH.NAVIGATION_SUGGESTION_MIN_QUERY_LENGTH;
+    const trimmedQuery = query.trim();
+
+    if (!trimmedQuery) {
+        return false;
+    }
+
+    if (isBareNavigationIntentQuery(normalizeForMatch(trimmedQuery))) {
+        return true;
+    }
+
+    return trimmedQuery.length >= CONST.SEARCH.NAVIGATION_SUGGESTION_MIN_QUERY_LENGTH;
 }
 
 const TOP_LEVEL_NAVIGATION_ICON_NAMES = Array.from(new Set(TOP_LEVEL_NAVIGATION_ENTRIES.map((entry) => entry.iconName)));

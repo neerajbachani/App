@@ -2,11 +2,37 @@ import NAVIGATION_CATALOG_CATEGORY_ORDER, {type NavigationCatalogEntry} from './
 
 type LocalizedTranslate = (key: NavigationCatalogEntry['titleKey']) => string;
 
+const GO_TO_NAVIGATION_INTENT_PREFIX = 'go to';
+const GO_NAVIGATION_INTENT_PREFIX = 'go';
+
 function normalizeForMatch(text: string): string {
     return text
         .normalize('NFD')
         .replace(/\p{Diacritic}/gu, '')
         .toLowerCase();
+}
+
+function stripNavigationIntentPrefix(normalizedQuery: string): {remainder: string; wasNavigationIntent: boolean} {
+    let remainder = normalizedQuery.trim();
+    let wasNavigationIntent = false;
+
+    if (remainder.startsWith(GO_TO_NAVIGATION_INTENT_PREFIX)) {
+        wasNavigationIntent = true;
+        remainder = remainder.slice(GO_TO_NAVIGATION_INTENT_PREFIX.length).trim();
+        return {remainder, wasNavigationIntent};
+    }
+
+    if (remainder === GO_NAVIGATION_INTENT_PREFIX || remainder.startsWith(`${GO_NAVIGATION_INTENT_PREFIX} `)) {
+        wasNavigationIntent = true;
+        remainder = remainder === GO_NAVIGATION_INTENT_PREFIX ? '' : remainder.slice(GO_NAVIGATION_INTENT_PREFIX.length).trim();
+    }
+
+    return {remainder, wasNavigationIntent};
+}
+
+function isBareNavigationIntentQuery(normalizedQuery: string): boolean {
+    const {remainder, wasNavigationIntent} = stripNavigationIntentPrefix(normalizedQuery);
+    return wasNavigationIntent && remainder === '';
 }
 
 function getEntryTitle(entry: NavigationCatalogEntry, translate: LocalizedTranslate): string {
@@ -46,6 +72,23 @@ function getMatchScore(query: string, searchableText: string): number {
     return 1;
 }
 
+function sortNavigationCatalogByCategoryAndTitle(catalog: NavigationCatalogEntry[], translate: LocalizedTranslate): NavigationCatalogEntry[] {
+    return [...catalog].sort((left, right) => {
+        const leftCategoryOrder = NAVIGATION_CATALOG_CATEGORY_ORDER[left.category];
+        const rightCategoryOrder = NAVIGATION_CATALOG_CATEGORY_ORDER[right.category];
+
+        if (leftCategoryOrder !== rightCategoryOrder) {
+            return leftCategoryOrder - rightCategoryOrder;
+        }
+
+        return getEntryTitle(left, translate).localeCompare(getEntryTitle(right, translate));
+    });
+}
+
+function getCappedNavigationCatalog(catalog: NavigationCatalogEntry[], translate: LocalizedTranslate, maxResults: number): NavigationCatalogEntry[] {
+    return sortNavigationCatalogByCategoryAndTitle(catalog, translate).slice(0, maxResults);
+}
+
 function filterAndRankNavigationEntries(query: string, catalog: NavigationCatalogEntry[], translate: LocalizedTranslate, maxResults: number): NavigationCatalogEntry[] {
     const trimmedQuery = query.trim();
 
@@ -53,10 +96,23 @@ function filterAndRankNavigationEntries(query: string, catalog: NavigationCatalo
         return [];
     }
 
+    const normalizedQuery = normalizeForMatch(trimmedQuery);
+
+    if (isBareNavigationIntentQuery(normalizedQuery)) {
+        return getCappedNavigationCatalog(catalog, translate, maxResults);
+    }
+
+    const {remainder, wasNavigationIntent} = stripNavigationIntentPrefix(normalizedQuery);
+    const effectiveQuery = wasNavigationIntent ? remainder : normalizedQuery;
+
+    if (!effectiveQuery) {
+        return [];
+    }
+
     return catalog
         .map((entry) => ({
             entry,
-            score: getMatchScore(trimmedQuery, getSearchableText(entry, translate)),
+            score: getMatchScore(effectiveQuery, getSearchableText(entry, translate)),
         }))
         .filter(({score}) => score > 0)
         .sort((left, right) => {
@@ -77,5 +133,14 @@ function filterAndRankNavigationEntries(query: string, catalog: NavigationCatalo
         .map(({entry}) => entry);
 }
 
-export {filterAndRankNavigationEntries, getEntryTitle, getMatchScore, getSearchableText, normalizeForMatch};
+export {
+    filterAndRankNavigationEntries,
+    getCappedNavigationCatalog,
+    getEntryTitle,
+    getMatchScore,
+    getSearchableText,
+    isBareNavigationIntentQuery,
+    normalizeForMatch,
+    stripNavigationIntentPrefix,
+};
 export type {LocalizedTranslate};

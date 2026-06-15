@@ -61,11 +61,17 @@ describe('shouldShowNavigationSuggestions', () => {
         expect(shouldShowNavigationSuggestions('spend')).toBe(true);
     });
 
-    it('hides navigation suggestions below 3 characters', () => {
+    it('shows navigation suggestions for bare go and go to navigation intent', () => {
+        expect(shouldShowNavigationSuggestions('go')).toBe(true);
+        expect(shouldShowNavigationSuggestions('go to')).toBe(true);
+        expect(shouldShowNavigationSuggestions('  GO TO  ')).toBe(true);
+    });
+
+    it('hides navigation suggestions below 3 characters unless go navigation intent', () => {
         expect(shouldShowNavigationSuggestions('')).toBe(false);
         expect(shouldShowNavigationSuggestions('  ')).toBe(false);
-        expect(shouldShowNavigationSuggestions('go')).toBe(false);
         expect(shouldShowNavigationSuggestions(' hr')).toBe(false);
+        expect(shouldShowNavigationSuggestions('to')).toBe(false);
     });
 });
 
