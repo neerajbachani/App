@@ -57,6 +57,7 @@ import {getUpdatedSubstitutionsMap} from './getUpdatedSubstitutionsMap';
 import {
     getSpendNavigationIconNames,
     isSpendSearchRootRoute,
+    navigateToWorkspaceAwareRoute,
     navigationCatalogEntriesToSearchQueryItems,
     shouldShowNavigationSuggestions,
     TOP_LEVEL_NAVIGATION_ICON_NAMES,
@@ -373,8 +374,11 @@ function SearchRouter({onRouterClose, shouldHideInputCaret, isSearchRouterDispla
                         Navigation.setNavigationActionToMicrotaskQueue(() => {
                             if (isSpendSearchRootRoute(route)) {
                                 setSearchContext(false);
+                                Navigation.navigate(route);
+                                return;
                             }
-                            Navigation.navigate(route);
+
+                            navigateToWorkspaceAwareRoute(route);
                         });
                     });
                     onRouterClose();

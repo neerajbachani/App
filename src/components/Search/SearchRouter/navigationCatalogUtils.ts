@@ -1,14 +1,24 @@
 import type {ExpensifyIconName} from '@components/Icon/ExpensifyIconLoader';
 import type {LocaleContextProps} from '@components/LocaleContextProvider';
 import type {SearchQueryItem} from '@components/Search/SearchList/ListItem/SearchQueryListItem';
+import navigationRef from '@libs/Navigation/navigationRef';
+import type {NavigationPartialRoute} from '@libs/Navigation/types';
 import {buildCannedSearchQuery} from '@libs/SearchQueryUtils';
 import type {SearchKey, SearchTypeMenuSection} from '@libs/SearchUIUtils';
+import Navigation from '@navigation/Navigation';
 import CONST from '@src/CONST';
 import type {TranslationPaths} from '@src/languages/types';
+import NAVIGATORS from '@src/NAVIGATORS';
 import ROUTES from '@src/ROUTES';
+import SCREENS from '@src/SCREENS';
 import type IconAsset from '@src/types/utils/IconAsset';
 import {getEntryTitle, isBareNavigationIntentQuery, normalizeForMatch} from './filterAndRankNavigationEntries';
 import type {NavigationCatalogEntry} from './navigationCatalogTypes';
+
+type WorkspaceSplitNavigatorState = {
+    splitRoute: NavigationPartialRoute;
+    sidebarRoute: NavigationPartialRoute;
+};
 
 const TOP_LEVEL_NAVIGATION_ENTRIES: Array<{
     titleKey: TranslationPaths;
@@ -111,6 +121,81 @@ function isSpendSearchRootRoute(route: string): boolean {
     return route.startsWith(`${ROUTES.SEARCH_ROOT.route}?`);
 }
 
+function getPolicyIDFromWorkspaceRoute(route: string): string | undefined {
+    const path = route.split('?').at(0) ?? route;
+    const policyID = path.match(/^workspaces\/([^/]+)/)?.at(1);
+
+    return policyID || undefined;
+}
+
+function findActiveWorkspaceSplitNavigator(): WorkspaceSplitNavigatorState | undefined {
+    if (!navigationRef.isReady()) {
+        return undefined;
+    }
+
+    const rootState = navigationRef.getRootState();
+    const currentRoute = rootState?.routes.at(-1);
+
+    if (!currentRoute) {
+        return undefined;
+    }
+
+    let activeRoute: NavigationPartialRoute = currentRoute;
+
+    if (currentRoute.name === NAVIGATORS.TAB_NAVIGATOR) {
+        const tabRoutes = currentRoute.state?.routes;
+        const activeTab = tabRoutes?.at(currentRoute.state?.index ?? 0);
+
+        if (activeTab?.name === NAVIGATORS.WORKSPACE_NAVIGATOR) {
+            activeRoute = (activeTab.state?.routes?.at(-1) ?? activeTab) as NavigationPartialRoute;
+        } else if (activeTab) {
+            activeRoute = activeTab as NavigationPartialRoute;
+        }
+    }
+
+    if (activeRoute.name !== NAVIGATORS.WORKSPACE_SPLIT_NAVIGATOR) {
+        return undefined;
+    }
+
+    const sidebarRoute = activeRoute.state?.routes?.at(0) as NavigationPartialRoute | undefined;
+
+    if (!sidebarRoute || sidebarRoute.name !== SCREENS.WORKSPACE.INITIAL) {
+        return undefined;
+    }
+
+    return {splitRoute: activeRoute, sidebarRoute};
+}
+
+/**
+ * Workspace split navigators keep WORKSPACE.INITIAL as a persistent sidebar with its own policyID.
+ * Navigating directly to a central workspace route can update the central pane while leaving the sidebar stale.
+ */
+function navigateToWorkspaceAwareRoute(route: string) {
+    const policyID = getPolicyIDFromWorkspaceRoute(route);
+
+    if (!policyID) {
+        Navigation.navigate(route);
+        return;
+    }
+
+    const workspaceSplit = findActiveWorkspaceSplitNavigator();
+
+    if (!workspaceSplit) {
+        Navigation.navigate(route);
+        return;
+    }
+
+    const currentPolicyID = (workspaceSplit.sidebarRoute.params as {policyID?: string} | undefined)?.policyID;
+
+    if (currentPolicyID !== policyID) {
+        Navigation.setParams({policyID}, workspaceSplit.sidebarRoute.key, workspaceSplit.splitRoute.state?.key);
+        Navigation.navigate(route, {forceReplace: true});
+        return;
+    }
+
+    Navigation.navigate(route);
+}
+
 function shouldShowNavigationSuggestions(query: string): boolean {
     const trimmedQuery = query.trim();
 
@@ -133,6 +218,7 @@ export {
     getTopLevelNavigationCatalogEntries,
     INDEXED_SPEND_SEARCH_KEYS,
     isSpendSearchRootRoute,
+    navigateToWorkspaceAwareRoute,
     navigationCatalogEntriesToSearchQueryItems,
     shouldShowNavigationSuggestions,
     TOP_LEVEL_NAVIGATION_ICON_NAMES,
