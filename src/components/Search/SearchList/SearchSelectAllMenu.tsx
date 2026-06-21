@@ -1,3 +1,4 @@
+import {useIsFocused} from '@react-navigation/native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import type {View} from 'react-native';
 import Checkbox from '@components/Checkbox';
@@ -22,6 +23,7 @@ type SearchSelectAllMenuProps = {
 };
 
 function SearchSelectAllMenu({isSelectAllChecked, isIndeterminate, selectedItemsLength, totalItems, shouldShowTextButton, onAllCheckboxPress}: SearchSelectAllMenuProps) {
+    const isFocused = useIsFocused();
     const styles = useThemeStyles();
     const {translate} = useLocalize();
     const expensifyIcons = useMemoizedLazyExpensifyIcons(['Checkmark', 'CheckSquare']);
@@ -79,18 +81,21 @@ function SearchSelectAllMenu({isSelectAllChecked, isIndeterminate, selectedItems
 
     return (
         <>
-            <PopoverMenu
-                isVisible={isSelectAllMenuVisible}
-                onClose={closeSelectAllMenu}
-                onItemSelected={closeSelectAllMenu}
-                menuItems={selectAllMenuItems}
-                anchorRef={selectAllAnchorRef}
-                anchorPosition={selectAllMenuPosition}
-                anchorAlignment={{
-                    horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.LEFT,
-                    vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.TOP,
-                }}
-            />
+            {isFocused && (
+                <PopoverMenu
+                    isVisible={isSelectAllMenuVisible}
+                    onClose={closeSelectAllMenu}
+                    onItemSelected={closeSelectAllMenu}
+                    menuItems={selectAllMenuItems}
+                    anchorRef={selectAllAnchorRef}
+                    anchorPosition={selectAllMenuPosition}
+                    shouldCloseWhenBrowserNavigationChanged={false}
+                    anchorAlignment={{
+                        horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.LEFT,
+                        vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.TOP,
+                    }}
+                />
+            )}
             <Checkbox
                 ref={selectAllAnchorRef}
                 accessibilityLabel={translate('accessibilityHints.selectAllItems')}

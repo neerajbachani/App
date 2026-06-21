@@ -141,6 +141,9 @@ type PopoverMenuProps = Partial<ModalAnimationProps> & {
 
     shouldHandleNavigationBack?: boolean;
 
+    /** Whether we should close when browser navigation changes. This doesn't affect native platform */
+    shouldCloseWhenBrowserNavigationChanged?: boolean;
+
     /**
      * Whether the modal should enable the new focus manager.
      * We are attempting to migrate to a new refocus manager, adding this property for gradual migration.
@@ -306,6 +309,7 @@ function BasePopoverMenu({
     headerText,
     fromSidebarMediumScreen,
     shouldHandleNavigationBack,
+    shouldCloseWhenBrowserNavigationChanged,
     anchorAlignment = {
         horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.LEFT,
         vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.BOTTOM,
@@ -696,6 +700,7 @@ function BasePopoverMenu({
             innerContainerStyle={{...styles.pv0, ...innerContainerStyle}}
             shouldUseModalPaddingStyle={shouldUseModalPaddingStyle}
             shouldHandleNavigationBack={shouldHandleNavigationBack}
+            shouldCloseWhenBrowserNavigationChanged={shouldCloseWhenBrowserNavigationChanged}
             testID={testID}
             shouldWrapModalChildrenInScrollViewIfBottomDockedInLandscapeMode={!shouldUseScrollView}
             enableEdgeToEdgeBottomSafeAreaPadding={enableEdgeToEdgeBottomSafeAreaPadding}

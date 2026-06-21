@@ -1,3 +1,4 @@
+import {useIsFocused} from '@react-navigation/native';
 import {emailSelector} from '@selectors/Session';
 import {validTransactionDraftIDsSelector} from '@selectors/TransactionDraft';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
@@ -32,6 +33,7 @@ import ROUTES, {DYNAMIC_ROUTES} from '@src/ROUTES';
 import type * as OnyxTypes from '@src/types/onyx';
 
 function SearchActionsBarCreateButton() {
+    const isFocused = useIsFocused();
     const styles = useThemeStyles();
     const {translate} = useLocalize();
     const expensifyIcons = useMemoizedLazyExpensifyIcons(['Plus', 'Location', 'Document', 'Receipt', 'Coins', 'Cash', 'Transfer', 'MoneyCircle']);
@@ -214,18 +216,21 @@ function SearchActionsBarCreateButton() {
 
     return (
         <View style={[styles.searchActionsBarCreateButton]}>
-            <PopoverMenu
-                onClose={hideCreateMenu}
-                isVisible={isCreateMenuActive}
-                menuItems={createMenuItems}
-                onItemSelected={hideCreateMenu}
-                anchorRef={createButtonRef}
-                anchorPosition={createMenuPosition}
-                anchorAlignment={{
-                    horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.RIGHT,
-                    vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.TOP,
-                }}
-            />
+            {isFocused && (
+                <PopoverMenu
+                    onClose={hideCreateMenu}
+                    isVisible={isCreateMenuActive}
+                    menuItems={createMenuItems}
+                    onItemSelected={hideCreateMenu}
+                    anchorRef={createButtonRef}
+                    anchorPosition={createMenuPosition}
+                    shouldCloseWhenBrowserNavigationChanged={false}
+                    anchorAlignment={{
+                        horizontal: CONST.MODAL.ANCHOR_ORIGIN_HORIZONTAL.RIGHT,
+                        vertical: CONST.MODAL.ANCHOR_ORIGIN_VERTICAL.TOP,
+                    }}
+                />
+            )}
             <Button
                 ref={createButtonRef}
                 success

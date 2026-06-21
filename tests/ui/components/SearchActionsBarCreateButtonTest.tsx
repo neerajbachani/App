@@ -55,6 +55,14 @@ jest.mock('@hooks/useCreateEmptyReportConfirmation', () => () => ({
 
 jest.mock('@libs/Navigation/helpers/isSearchTopmostFullScreenRoute', () => () => true);
 
+jest.mock('@react-navigation/native', () => {
+    const actual = jest.requireActual<typeof import('@react-navigation/native')>('@react-navigation/native');
+    return {
+        ...actual,
+        useIsFocused: jest.fn(() => true),
+    };
+});
+
 const mockUsePolicyForMovingExpenses = jest.mocked(usePolicyForMovingExpenses);
 const mockNavigate = jest.mocked(Navigation.navigate);
 const mockCreateNewReport = jest.mocked(createNewReport);
