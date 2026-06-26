@@ -47,9 +47,11 @@ jest.mock('@hooks/useThemeStyles', () =>
     jest.fn(
         () =>
             new Proxy(
-                {},
                 {
-                    get: () => ({}),
+                    userPillInRow: {flexShrink: 1, minWidth: 0},
+                },
+                {
+                    get: (target, prop) => target[prop as keyof typeof target] ?? {},
                 },
             ),
     ),
@@ -320,7 +322,13 @@ describe('AgentRulesSection', () => {
 
             expect(mockedUserPill).toHaveBeenCalledTimes(1);
             expect(mockedUserPill.mock.calls.at(0)?.at(0)).toEqual(
-                expect.objectContaining({accountID: RULE_BOT_ACCOUNT_ID, displayName: 'RuleBot', email: 'agent_777@expensify.ai', avatar: 'https://example.com/rulebot.png'}),
+                expect.objectContaining({
+                    accountID: RULE_BOT_ACCOUNT_ID,
+                    displayName: 'RuleBot',
+                    email: 'agent_777@expensify.ai',
+                    avatar: 'https://example.com/rulebot.png',
+                    style: {flexShrink: 1, minWidth: 0},
+                }),
             );
         });
 

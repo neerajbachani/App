@@ -5723,6 +5723,11 @@ const staticStyles = (theme: ThemeColors) =>
             marginBottom: 4,
         },
 
+        userPillInRow: {
+            flexShrink: 1,
+            minWidth: 0,
+        },
+
         userPillText: {
             fontSize: variables.fontSizeNormal,
             lineHeight: variables.lineHeightXLarge,
