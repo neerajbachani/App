@@ -1,7 +1,9 @@
 import type {NavigationState, PartialState, getStateFromPath as RNGetStateFromPath, Route} from '@react-navigation/native';
+import {findFocusedRoute} from '@react-navigation/native';
 import pick from 'lodash/pick';
 import getInitialSplitNavigatorState from '@libs/Navigation/AppNavigator/createSplitNavigator/getInitialSplitNavigatorState';
 import TAB_SCREENS from '@libs/Navigation/AppNavigator/Navigators/TAB_SCREENS';
+import {screensWithOnyxTabNavigator} from '@libs/Navigation/linkingConfig/config';
 import {RHP_TO_DOMAIN, RHP_TO_HOME, RHP_TO_SEARCH, RHP_TO_SETTINGS, RHP_TO_SIDEBAR, RHP_TO_WORKSPACE, RHP_TO_WORKSPACES_LIST} from '@libs/Navigation/linkingConfig/RELATIONS';
 import type {NavigationPartialRoute, RootNavigatorParamList} from '@libs/Navigation/types';
 import {getReportOrDraftReport} from '@libs/ReportUtils';
@@ -82,6 +84,158 @@ function getSearchScreenNameForRoute(route: NavigationPartialRoute): string {
     return route.name;
 }
 
+/**
+ * OnyxTabNavigator hosts (e.g. split expense overview) stop at the parent route during guarded
+ * focused-route lookup. After refresh, routing metadata such as backTo and path often lives on
+ * the focused tab leaf instead. Merge that metadata onto the parent route used for fullscreen
+ * matching so the background screen can still be reconstructed.
+ */
+function enrichOnyxTabHostRouteForFullScreenMatching(route: NavigationPartialRoute): NavigationPartialRoute {
+    if (!screensWithOnyxTabNavigator.has(route.name) || !route.state) {
+        return route;
+    }
+
+    const focusedChildRoute = findFocusedRoute(route.state as PartialState<NavigationState>);
+    if (!focusedChildRoute) {
+        return route;
+    }
+
+    const shouldCopyBackTo = !isRouteWithBackToParam(route) && isRouteWithBackToParam(focusedChildRoute);
+    const shouldCopyPath = !!focusedChildRoute.path && route.path !== focusedChildRoute.path;
+
+    if (!shouldCopyBackTo && !shouldCopyPath) {
+        return route;
+    }
+
+    const enrichedRoute: NavigationPartialRoute = {...route};
+
+    if (shouldCopyBackTo) {
+        enrichedRoute.params = {
+            ...(route.params ?? {}),
+            backTo: focusedChildRoute.params.backTo,
+        };
+    }
+
+    if (shouldCopyPath) {
+        enrichedRoute.path = focusedChildRoute.path;
+    }
+
+    return enrichedRoute;
+}
+
+/**
+ * When a modal's backTo points at another RHP screen (e.g. split expense opened from /e/ expense detail),
+ * refresh reconstruction must restore that intermediate RHP layer beneath the modal — not only the fullscreen
+ * report resolved from the nested backTo chain.
+ */
+function injectRHPBackToLayerIntoAdaptedState(adaptedState: PartialState<NavigationState>, backToPath: string): PartialState<NavigationState> {
+    let backToState: PartialState<NavigationState> | undefined;
+
+    try {
+        backToState = getStateFromPath(backToPath as RoutePath);
+    } catch (error) {
+        return adaptedState;
+    }
+
+    const backToRightModalRoute = backToState?.routes?.find((route) => route.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR);
+    const backToRightModalRoutes = backToRightModalRoute?.state?.routes as NavigationPartialRoute[] | undefined;
+
+    if (!backToRightModalRoutes?.length) {
+        return adaptedState;
+    }
+
+    const rightModalIndex = adaptedState.routes.findIndex((route) => route.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR);
+    if (rightModalIndex === -1) {
+        return adaptedState;
+    }
+
+    const currentRightModalRoute = adaptedState.routes.at(rightModalIndex);
+    const currentRightModalState = currentRightModalRoute?.state as PartialState<NavigationState> | undefined;
+    const currentRightModalRoutes = currentRightModalState?.routes as NavigationPartialRoute[] | undefined;
+
+    if (!currentRightModalRoutes?.length) {
+        return adaptedState;
+    }
+
+    const routesToPrepend = backToRightModalRoutes.filter((backToRoute) => !currentRightModalRoutes.some((currentRoute) => currentRoute.name === backToRoute.name));
+
+    if (!routesToPrepend.length) {
+        return adaptedState;
+    }
+
+    const currentFocusedIndex = currentRightModalState.index ?? currentRightModalRoutes.length - 1;
+    const mergedRightModalRoutes = [...routesToPrepend, ...currentRightModalRoutes];
+
+    const updatedRoutes = [...adaptedState.routes];
+    updatedRoutes[rightModalIndex] = {
+        ...currentRightModalRoute,
+        state: {
+            ...currentRightModalState,
+            routes: mergedRightModalRoutes,
+            index: currentFocusedIndex + routesToPrepend.length,
+        },
+    };
+
+    return {...adaptedState, routes: updatedRoutes};
+}
+
+/**
+ * Walks the focused route's backTo chain and prepends any missing intermediate RHP layers
+ * into RightModalNavigator. Applies to all stacked RHP flows (split, merge, change workspace, etc.).
+ */
+function restoreRHPStackFromBackToChain(adaptedState: PartialState<NavigationState>, routeForFullScreenMatching: NavigationPartialRoute): PartialState<NavigationState> {
+    const rightModalRoute = adaptedState.routes.find((route) => route.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR);
+    if (!rightModalRoute) {
+        return adaptedState;
+    }
+
+    let state = adaptedState;
+    let currentRoute = routeForFullScreenMatching;
+    const visitedBackToPaths = new Set<string>();
+
+    while (isRouteWithBackToParam(currentRoute) && !isDynamicRouteScreen(currentRoute.name as Screen)) {
+        const backToPath = currentRoute.params.backTo;
+
+        if (visitedBackToPaths.has(backToPath)) {
+            break;
+        }
+        visitedBackToPaths.add(backToPath);
+
+        state = injectRHPBackToLayerIntoAdaptedState(state, backToPath);
+
+        let backToState: PartialState<NavigationState> | undefined;
+        try {
+            backToState = getStateFromPath(backToPath as RoutePath);
+        } catch {
+            break;
+        }
+
+        const backToRightModalRoute = backToState?.routes?.find((route) => route.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR);
+        if (!backToRightModalRoute) {
+            break;
+        }
+
+        const nextFocusedRoute = findFocusedRouteWithOnyxTabGuard(backToState);
+        if (!nextFocusedRoute) {
+            break;
+        }
+
+        currentRoute = enrichOnyxTabHostRouteForFullScreenMatching(nextFocusedRoute);
+    }
+
+    return state;
+}
+
+function applyRHPStackRestore(adaptedState: PartialState<NavigationState>): PartialState<NavigationState> {
+    const focusedRoute = findFocusedRouteWithOnyxTabGuard(adaptedState);
+    if (!focusedRoute) {
+        return adaptedState;
+    }
+
+    const routeForRestore = enrichOnyxTabHostRouteForFullScreenMatching(focusedRoute);
+    return restoreRHPStackFromBackToChain(adaptedState, routeForRestore);
+}
+
 function getMatchingFullScreenRoute(route: NavigationPartialRoute) {
     const isDynamicScreen = isDynamicRouteScreen(route.name as Screen);
 
@@ -116,7 +270,7 @@ function getMatchingFullScreenRoute(route: NavigationPartialRoute) {
 
     const routeNameForLookup = getSearchScreenNameForRoute(route);
     if (RHP_TO_SEARCH[routeNameForLookup]) {
-        const paramsFromRoute = getParamsFromRoute(RHP_TO_SEARCH[routeNameForLookup]);
+                const paramsFromRoute = getParamsFromRoute(RHP_TO_SEARCH[routeNameForLookup]);
         const copiedParams = paramsFromRoute.length > 0 ? pick(route.params, paramsFromRoute) : {};
         let queryParam: Record<string, string> = {};
         if (route.path) {
@@ -328,7 +482,7 @@ function getAdaptedState(state: PartialState<NavigationState<RootNavigatorParamL
                 const updatedTabState = {...tabState, routes: updatedTabRoutes};
                 const updatedFullScreenRoute = {...fullScreenRoute, state: updatedTabState};
                 const updatedRoutes = currentState.routes.map((r) => (r.name === NAVIGATORS.TAB_NAVIGATOR ? updatedFullScreenRoute : r)) as NavigationPartialRoute[];
-                return getRoutesWithIndex(updatedRoutes);
+                return applyRHPStackRestore(getRoutesWithIndex(updatedRoutes));
             }
         }
     }
@@ -344,16 +498,18 @@ function getAdaptedState(state: PartialState<NavigationState<RootNavigatorParamL
             // In that case, skip the default full screen route injection below - the state is already complete.
             const hasFullScreenRoute = currentState.routes.some((route) => isFullScreenName(route.name));
             if (hasFullScreenRoute) {
-                return currentState;
+                return applyRHPStackRestore(currentState);
             }
         }
 
         if (focusedRoute) {
-            const matchingRootRoute = getMatchingFullScreenRoute(focusedRoute);
+            const routeForFullScreenMatching = enrichOnyxTabHostRouteForFullScreenMatching(focusedRoute);
+            const matchingRootRoute = getMatchingFullScreenRoute(routeForFullScreenMatching);
 
             // If there is a matching root route, add it to the state.
             if (matchingRootRoute) {
-                return getRoutesWithIndex([matchingRootRoute, ...currentState.routes]);
+                const adaptedState = getRoutesWithIndex([matchingRootRoute, ...currentState.routes]);
+                return applyRHPStackRestore(adaptedState);
             }
         }
 
@@ -366,13 +522,14 @@ function getAdaptedState(state: PartialState<NavigationState<RootNavigatorParamL
                 state: getOnboardingAdaptedState(onboardingNavigator.state),
             };
 
-            return getRoutesWithIndex([getTabNavigatorState({name: SCREENS.HOME}), adaptedOnboardingNavigator]);
+            return applyRHPStackRestore(getRoutesWithIndex([getTabNavigatorState({name: SCREENS.HOME}), adaptedOnboardingNavigator]));
         }
 
         const isRightModalNavigator = currentState.routes.find((route) => route.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR);
 
         if (isRightModalNavigator) {
-            return getRoutesWithIndex([getTabNavigatorState({name: NAVIGATORS.REPORTS_SPLIT_NAVIGATOR}), ...currentState.routes]);
+            const fallbackState = getRoutesWithIndex([getTabNavigatorState({name: NAVIGATORS.REPORTS_SPLIT_NAVIGATOR}), ...currentState.routes]);
+            return applyRHPStackRestore(fallbackState);
         }
 
         // Public screens (e.g. ValidateLogin) exist in both PublicScreens and AuthScreens navigators.
@@ -380,16 +537,16 @@ function getAdaptedState(state: PartialState<NavigationState<RootNavigatorParamL
         // and TabNavigator doesn't exist — causing the RESET action to fail.
         const hasOnlyPublicScreens = currentState.routes.every((route) => PUBLIC_SCREENS.has(route.name));
         if (hasOnlyPublicScreens) {
-            return currentState;
+            return applyRHPStackRestore(currentState);
         }
 
         const defaultFullScreenRoute = getDefaultFullScreenRoute(focusedRoute);
 
         // If not, add the default full screen route.
-        return getRoutesWithIndex([defaultFullScreenRoute, ...currentState.routes]);
+        return applyRHPStackRestore(getRoutesWithIndex([defaultFullScreenRoute, ...currentState.routes]));
     }
 
-    return currentState;
+    return applyRHPStackRestore(currentState);
 }
 
 /**
@@ -421,6 +578,7 @@ const getAdaptedStateFromPath: GetAdaptedStateFromPath = (path, options, shouldR
     }
 
     const state = getStateFromPath(normalizedPath as RoutePath) as PartialState<NavigationState<RootNavigatorParamList>>;
+
     if (shouldReplacePathInNestedState) {
         replacePathInNestedState(state, normalizedPath);
     }
@@ -429,8 +587,17 @@ const getAdaptedStateFromPath: GetAdaptedStateFromPath = (path, options, shouldR
         throw new Error(`[getAdaptedStateFromPath] Unable to get state from path: ${path}`);
     }
 
-    return getAdaptedState(state);
+    const adaptedState = getAdaptedState(state);
+
+    return adaptedState;
 };
 
 export default getAdaptedStateFromPath;
-export {getMatchingFullScreenRoute, isFullScreenName};
+export {
+    applyRHPStackRestore,
+    enrichOnyxTabHostRouteForFullScreenMatching,
+    getMatchingFullScreenRoute,
+    injectRHPBackToLayerIntoAdaptedState,
+    isFullScreenName,
+    restoreRHPStackFromBackToChain,
+};
