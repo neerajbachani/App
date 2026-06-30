@@ -1,6 +1,6 @@
-import type {NavigationAction} from '@react-navigation/native';
-import {useFocusEffect, useIsFocused, usePreventRemove, useRoute} from '@react-navigation/native';
-import {useRef} from 'react';
+import type {NavigationAction, NavigationProp, ParamListBase} from '@react-navigation/native';
+import {useFocusEffect, useIsFocused, useNavigation, usePreventRemove, useRoute} from '@react-navigation/native';
+import {useEffect, useReducer, useRef} from 'react';
 import {BackHandler} from 'react-native';
 import {ModalActions} from '@components/Modal/Global/ModalContext';
 import useConfirmModal from '@hooks/useConfirmModal';
@@ -8,9 +8,31 @@ import useLocalize from '@hooks/useLocalize';
 import Log from '@libs/Log';
 import navigationRef from '@libs/Navigation/navigationRef';
 import {useRegisterTabSwitchGuard} from '@libs/Navigation/TabSwitchGuardContext';
+import {useRegisterEdgeBackGuard} from './edgeBackGuardContext';
 import getDiscardChangesModalConfig from './getDiscardChangesModalConfig';
+import platformOS from './platformOS';
 import type {DiscardChangesConfirmation} from './types';
 import type UseDiscardChangesConfirmationOptions from './types';
+
+const getGestureOptions = (gestureEnabled: boolean) => ({
+    gestureEnabled,
+    fullScreenGestureEnabled: gestureEnabled,
+    native: {gestureEnabled, fullScreenGestureEnabled: gestureEnabled},
+});
+
+/** Disables or restores the iOS edge-swipe on every ancestor stack screen hosting this route. */
+function setAncestorStackGestureEnabled(navigation: NavigationProp<ParamListBase>, gestureEnabled: boolean): NavigationProp<ParamListBase>[] {
+    const updatedAncestors: NavigationProp<ParamListBase>[] = [];
+    let ancestor = navigation.getParent();
+
+    while (ancestor) {
+        ancestor.setOptions(getGestureOptions(gestureEnabled));
+        updatedAncestors.push(ancestor);
+        ancestor = ancestor.getParent();
+    }
+
+    return updatedAncestors;
+}
 
 function useDiscardChangesConfirmation({
     getHasUnsavedChanges,
@@ -20,6 +42,7 @@ function useDiscardChangesConfirmation({
     onTabSwitchDiscard,
 }: UseDiscardChangesConfirmationOptions): DiscardChangesConfirmation {
     const route = useRoute();
+    const navigation = useNavigation();
     const {translate} = useLocalize();
     const {showConfirmModal} = useConfirmModal();
     const blockedNavigationAction = useRef<NavigationAction | undefined>(undefined);
@@ -33,6 +56,25 @@ function useDiscardChangesConfirmation({
         isSavingRef.current = false;
     });
     const hasUnsavedChanges = () => isFocused && !isSavingRef.current && getHasUnsavedChanges();
+    const shouldPreventRemoval = hasUnsavedChanges();
+    const [, recheckUnsavedChanges] = useReducer((count: number) => count + 1, 0);
+
+    // On iOS, preventNativeDismiss cancels an in-flight edge-swipe and snaps the screen back (chat glimpse)
+    // before the discard modal appears. Disable swipe on every ancestor modal-stack screen while dirty.
+    useEffect(() => {
+        if (platformOS !== 'ios' || !isFocused) {
+            return;
+        }
+
+        const gestureEnabled = !shouldPreventRemoval;
+        const updatedAncestors = setAncestorStackGestureEnabled(navigation, gestureEnabled);
+
+        return () => {
+            for (const ancestor of updatedAncestors) {
+                ancestor.setOptions(getGestureOptions(true));
+            }
+        };
+    }, [navigation, isFocused, shouldPreventRemoval, route.name]);
 
     // Also guard tab switches when this screen is an OnyxTabNavigator tab.
     // Self-disables outside a tab navigator or without an onTabSwitchDiscard handler
@@ -70,9 +112,25 @@ function useDiscardChangesConfirmation({
         });
     };
 
-    usePreventRemove(true, ({data}: {data: {action: NavigationAction}}) => {
-        // The action delivered here carries react-navigation's visited-routes marker, so re-dispatching it skips this screen's prevention
-        if (isReplayingBlockedNavigation.current || !hasUnsavedChanges()) {
+    const handleEdgeBack = () => {
+        if (isDiscardModalOpen.current || !hasUnsavedChanges()) {
+            return;
+        }
+        showDiscardModal();
+    };
+
+    useRegisterEdgeBackGuard(
+        route.name,
+        () => platformOS === 'ios' && isFocused && shouldPreventRemoval && !isDiscardModalOpen.current,
+        handleEdgeBack,
+    );
+
+    usePreventRemove(shouldPreventRemoval, ({data}: {data: {action: NavigationAction}}) => {
+        if (isReplayingBlockedNavigation.current) {
+            navigationRef.current?.dispatch(data.action);
+            return;
+        }
+        if (!hasUnsavedChanges()) {
             navigationRef.current?.dispatch(data.action);
             return;
         }
@@ -102,7 +160,7 @@ function useDiscardChangesConfirmation({
         isSavingRef.current = isSaving;
     };
 
-    return {notifySaving};
+    return {notifySaving, recheckUnsavedChanges};
 }
 
 export default useDiscardChangesConfirmation;

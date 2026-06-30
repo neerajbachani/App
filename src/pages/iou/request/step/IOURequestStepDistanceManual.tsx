@@ -144,7 +144,7 @@ function IOURequestStepDistanceManual({
     const distanceInMeters = getDistanceInMeters(transaction, transaction?.comment?.customUnit?.distanceUnit ? transaction.comment.customUnit.distanceUnit : unit);
     const distance = typeof transaction?.comment?.customUnit?.quantity === 'number' ? roundToTwoDecimalPlaces(DistanceRequestUtils.convertDistanceUnit(distanceInMeters, unit)) : undefined;
 
-    const {notifySaving} = useDiscardChangesConfirmation({
+    const {notifySaving, recheckUnsavedChanges} = useDiscardChangesConfirmation({
         getHasUnsavedChanges: () => {
             const typedDistance = numberFormRef.current?.getNumber() ?? '';
             return typedDistance !== (distance?.toString() ?? '');
@@ -313,6 +313,7 @@ function IOURequestStepDistanceManual({
                 value={distance?.toString()}
                 shouldUseDynamicFontSize
                 onInputChange={() => {
+                    recheckUnsavedChanges();
                     if (!formError) {
                         return;
                     }

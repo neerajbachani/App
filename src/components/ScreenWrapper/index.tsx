@@ -13,6 +13,8 @@ import {useInitialURLState} from '@components/InitialURLContextProvider';
 import {MFA_OVERLAY_SCREENS} from '@components/MultifactorAuthentication/mfaNavigation';
 import withNavigationFallback from '@components/withNavigationFallback';
 import useAccessibilityFocus from '@hooks/useAccessibilityFocus';
+import DiscardChangesEdgeBackGuard from '@hooks/useDiscardChangesConfirmation/DiscardChangesEdgeBackGuard';
+import {DiscardChangesEdgeGuardProvider} from '@hooks/useDiscardChangesConfirmation/edgeBackGuardContext';
 import useEnvironment from '@hooks/useEnvironment';
 import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
@@ -292,7 +294,8 @@ function ScreenWrapper({
 
     return (
         <FocusTrapForScreen focusTrapSettings={focusTrapSettings}>
-            <ScreenWrapperContainer
+            <DiscardChangesEdgeGuardProvider>
+                <ScreenWrapperContainer
                 ref={mergedScreenWrapperRef}
                 style={[styles.flex1, style]}
                 bottomContent={bottomContent}
@@ -321,7 +324,9 @@ function ScreenWrapper({
                         />
                     </ScreenWrapperOfflineIndicatorContext.Provider>
                 </ScreenWrapperStatusContext.Provider>
-            </ScreenWrapperContainer>
+                <DiscardChangesEdgeBackGuard />
+                </ScreenWrapperContainer>
+            </DiscardChangesEdgeGuardProvider>
         </FocusTrapForScreen>
     );
 }

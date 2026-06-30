@@ -153,7 +153,7 @@ function useDiscardChangesConfirmation({
         isSavingRef.current = isSaving;
     };
 
-    return {notifySaving};
+    return {notifySaving, recheckUnsavedChanges: () => {}};
 }
 
 export default useDiscardChangesConfirmation;

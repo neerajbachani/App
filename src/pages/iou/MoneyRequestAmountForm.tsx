@@ -53,6 +53,9 @@ type MoneyRequestAmountFormProps = Omit<MoneyRequestAmountInputProps, 'shouldSho
     /** Fired when submit button pressed, saves the given amount and navigates to the next page */
     onSubmitButtonPress: (currentMoney: CurrentMoney) => void;
 
+    /** Fired when the typed amount changes (e.g. so parents can re-evaluate unsaved-changes guards). */
+    onAmountChange?: () => void;
+
     /** The current tab we have navigated to in the expense modal. String that corresponds to the expense type. */
     selectedTab?: SelectedTabRequest;
 
@@ -100,6 +103,7 @@ function MoneyRequestAmountForm({
     policyID = '',
     onCurrencyButtonPress,
     onSubmitButtonPress,
+    onAmountChange,
     selectedTab = CONST.TAB_REQUEST.MANUAL,
     shouldKeepUserInput = false,
     chatReportID,
@@ -294,6 +298,7 @@ function MoneyRequestAmountForm({
                 onCurrencyButtonPress={onCurrencyButtonPress}
                 onFormatAmount={onFormatAmount}
                 onAmountChange={() => {
+                    onAmountChange?.();
                     if (!formError) {
                         return;
                     }

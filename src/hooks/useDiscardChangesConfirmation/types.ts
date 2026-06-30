@@ -15,6 +15,12 @@ type UseDiscardChangesConfirmationOptions = {
 type DiscardChangesConfirmation = {
     /** Suppress the discard prompt while an intentional save navigates away. Pass `false` to clear it if the save aborts without navigating. */
     notifySaving: (isSaving?: boolean) => void;
+
+    /**
+     * Re-evaluate whether removal should be prevented. Call when unsaved state changes without a parent re-render
+     * (e.g. ref-based number inputs that only update an imperative child).
+     */
+    recheckUnsavedChanges: () => void;
 };
 
 export default UseDiscardChangesConfirmationOptions;
