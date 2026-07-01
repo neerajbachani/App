@@ -10,14 +10,20 @@ import getIsNarrowLayout from '@libs/getIsNarrowLayout';
 import isPublicScreenRoute from '@libs/isPublicScreenRoute';
 import Log from '@libs/Log';
 import {isOnboardingFlowName} from '@libs/Navigation/helpers/isNavigatorName';
+import isReportOpenInRHP from '@libs/Navigation/helpers/isReportOpenInRHP';
+import isReportTopmostSplitNavigator from '@libs/Navigation/helpers/isReportTopmostSplitNavigator';
+import isSearchTopmostFullScreenRoute from '@libs/Navigation/helpers/isSearchTopmostFullScreenRoute';
 import normalizePath from '@libs/Navigation/helpers/normalizePath';
+import resolveOpenLinkReportRoute from '@libs/Navigation/helpers/resolveOpenLinkReportRoute';
 import shouldOpenOnAdminRoom from '@libs/Navigation/helpers/shouldOpenOnAdminRoom';
 import swapBackgroundTabForRHPTarget from '@libs/Navigation/helpers/swapBackgroundTabForRHPTarget';
 import willRouteNavigateToRHP from '@libs/Navigation/helpers/willRouteNavigateToRHP';
 import Navigation from '@libs/Navigation/Navigation';
 import navigationRef from '@libs/Navigation/navigationRef';
 import {getIsOffline} from '@libs/NetworkState';
-import {findLastAccessedReport, getReportIDFromLink, getRouteFromLink} from '@libs/ReportUtils';
+import {findLastAccessedReport, getReportIDFromLink, getRouteFromLink, parseReportRouteParams} from '@libs/ReportUtils';
+import {ALL_WIDE_RIGHT_MODALS} from '@components/WideRHPContextProvider/WIDE_RIGHT_MODALS';
+import getStateFromPath from '@libs/Navigation/helpers/getStateFromPath';
 import shouldSkipDeepLinkNavigation from '@libs/shouldSkipDeepLinkNavigation';
 import {endSpan, getSpan, startSpan} from '@libs/telemetry/activeSpans';
 import * as Url from '@libs/Url';
@@ -170,25 +176,127 @@ function getInternalExpensifyPath(href: string) {
     return attrPath;
 }
 
+type FocusedRHPReportParams = {
+    reportID: string;
+    reportActionID?: string;
+    routeKey: string;
+    navigatorKey: string;
+};
+
+function getFocusedRHPReportParams(state = navigationRef.getRootState()): FocusedRHPReportParams | undefined {
+    const rightModalNavigator = state?.routes?.at(-1);
+    if (rightModalNavigator?.name !== NAVIGATORS.RIGHT_MODAL_NAVIGATOR || !rightModalNavigator.state) {
+        return;
+    }
+
+    const navigatorKey = rightModalNavigator.state.key;
+    if (!navigatorKey) {
+        return;
+    }
+
+    const routeIndex = rightModalNavigator.state.index ?? rightModalNavigator.state.routes.length - 1;
+    const focusedRoute = rightModalNavigator.state.routes.at(routeIndex);
+    if (!focusedRoute?.key || !ALL_WIDE_RIGHT_MODALS.has(focusedRoute.name)) {
+        return;
+    }
+
+    const params = focusedRoute.params as {reportID?: string; reportActionID?: string} | undefined;
+    if (!params?.reportID) {
+        return;
+    }
+
+    return {
+        reportID: params.reportID,
+        reportActionID: params.reportActionID,
+        routeKey: focusedRoute.key,
+        navigatorKey,
+    };
+}
+
+function getReportActionIDFromLink(url: string): string | undefined {
+    const route = getRouteFromLink(url);
+    const {reportID, isSubReportPageRoute} = parseReportRouteParams(route);
+    if (!reportID || isSubReportPageRoute) {
+        return undefined;
+    }
+
+    const state = getStateFromPath(route as Route);
+    const focusedRoute = findFocusedRoute(state);
+    if (focusedRoute?.name !== SCREENS.REPORT) {
+        return undefined;
+    }
+
+    return focusedRoute?.params && 'reportActionID' in focusedRoute.params ? (focusedRoute.params.reportActionID as string) : undefined;
+}
+
+function tryUpdateSameRHPReportActionLink(href: string): boolean {
+    if (getIsNarrowLayout()) {
+        return false;
+    }
+
+    const rootState = navigationRef.getRootState();
+    if (!isReportOpenInRHP(rootState)) {
+        return false;
+    }
+
+    if (!isReportTopmostSplitNavigator() && !isSearchTopmostFullScreenRoute()) {
+        return false;
+    }
+
+    const reportID = getReportIDFromLink(href);
+    if (!reportID) {
+        return false;
+    }
+
+    const focusedRHPReport = getFocusedRHPReportParams(rootState);
+    if (!focusedRHPReport || focusedRHPReport.reportID !== reportID) {
+        return false;
+    }
+
+    const reportActionID = getReportActionIDFromLink(href);
+    if (!reportActionID) {
+        return false;
+    }
+
+    if (focusedRHPReport.reportActionID === reportActionID) {
+        return true;
+    }
+
+    Navigation.setParams({reportActionID}, focusedRHPReport.routeKey, focusedRHPReport.navigatorKey);
+    return true;
+}
+
 function openLink(href: string, environmentURL: string, isAttachment = false) {
     const hasSameOrigin = Url.hasSameExpensifyOrigin(href, environmentURL);
     const hasExpensifyOrigin = Url.hasSameExpensifyOrigin(href, CONFIG.EXPENSIFY.EXPENSIFY_URL) || Url.hasSameExpensifyOrigin(href, CONFIG.EXPENSIFY.STAGING_API_ROOT);
     const internalNewExpensifyPath = getInternalNewExpensifyPath(href);
     const internalExpensifyPath = getInternalExpensifyPath(href);
 
+    if (tryUpdateSameRHPReportActionLink(href)) {
+        return;
+    }
+
+    const resolvedReportRoute = resolveOpenLinkReportRoute(href, internalNewExpensifyPath);
+
+    const isNewDotReportLink = hasExpensifyOrigin && href.indexOf('newdotreport?reportID=') > -1;
+    const newDotReportID = isNewDotReportLink ? href.split('newdotreport?reportID=').pop() : undefined;
+    const defaultNewDotReportRoute = newDotReportID ? ROUTES.REPORT_WITH_ID.getRoute(newDotReportID) : undefined;
+
+    const navigationRoute = (resolvedReportRoute ?? (internalNewExpensifyPath || defaultNewDotReportRoute || undefined)) as Route | undefined;
+
     const isNarrowLayout = getIsNarrowLayout();
     const currentState = navigationRef.getRootState();
     const isRHPOpen = currentState?.routes?.at(-1)?.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR;
     let shouldCloseRHP = false;
-    if (!isNarrowLayout && isRHPOpen) {
-        const targetWillNavigateToRHP = willRouteNavigateToRHP(internalNewExpensifyPath as Route);
+    if (!isNarrowLayout && isRHPOpen && navigationRoute) {
+        const targetWillNavigateToRHP = willRouteNavigateToRHP(navigationRoute);
         if (!targetWillNavigateToRHP) {
             shouldCloseRHP = true;
         } else if (hasSameOrigin) {
             // Cross-tab RHP→RHP: swap the background tab in place so the RHP stays mounted and the
             // user sees only the RHP content update + the underlying tab animate, no close+reopen
             // flicker (issue: https://github.com/Expensify/App/issues/89710).
-            swapBackgroundTabForRHPTarget(currentState, internalNewExpensifyPath as Route);
+            swapBackgroundTabForRHPTarget(currentState, navigationRoute);
         }
     }
 
@@ -197,9 +305,8 @@ function openLink(href: string, environmentURL: string, isAttachment = false) {
     // clicking on the link will open the chat in NewDot. However, when a user is in NewDot and clicks on the concierge link, the link needs to be handled differently.
     // Normally, the link would be sent to Link.openOldDotLink() and opened in a new tab, and that's jarring to the user. Since the intention is to link to a specific NewDot chat,
     // the reportID is extracted from the URL and then opened as an internal link, taking the user straight to the chat in the same tab.
-    if (hasExpensifyOrigin && href.indexOf('newdotreport?reportID=') > -1) {
-        const reportID = href.split('newdotreport?reportID=').pop();
-        const reportRoute = ROUTES.REPORT_WITH_ID.getRoute(reportID);
+    if (isNewDotReportLink && defaultNewDotReportRoute) {
+        const reportRoute = resolvedReportRoute ?? defaultNewDotReportRoute;
         if (shouldCloseRHP) {
             Navigation.closeRHPFlow();
         }
@@ -210,14 +317,15 @@ function openLink(href: string, environmentURL: string, isAttachment = false) {
     // If we are handling a New Expensify link then we will assume this should be opened by the app internally. This ensures that the links are opened internally via react-navigation
     // instead of in a new tab or with a page refresh (which is the default behavior of an anchor tag)
     if (internalNewExpensifyPath && hasSameOrigin) {
-        if (isAnonymousUser() && !canAnonymousUserAccessRoute(internalNewExpensifyPath)) {
+        const routeToNavigate = (resolvedReportRoute ?? internalNewExpensifyPath) as Route;
+        if (isAnonymousUser() && !canAnonymousUserAccessRoute(routeToNavigate)) {
             signOutAndRedirectToSignIn();
             return;
         }
         if (shouldCloseRHP) {
             Navigation.closeRHPFlow();
         }
-        Navigation.navigate(internalNewExpensifyPath as Route);
+        Navigation.navigate(routeToNavigate);
         return;
     }
     // If we are handling an old dot Expensify link we need to open it with openOldDotLink() so we can navigate to it with the user already logged in.

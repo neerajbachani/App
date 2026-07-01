@@ -132,6 +132,7 @@ function useReportActionsScroll({
     const {scrollOffsetRef} = useContext(ActionListContext);
     const route = useRoute<PlatformStackRouteProp<ReportsSplitNavigatorParamList, typeof SCREENS.REPORT>>();
     const linkedReportActionID = route?.params?.reportActionID;
+    const previousLinkedReportActionID = usePrevious(linkedReportActionID);
     const backTo = route?.params?.backTo;
     const {isOffline} = useNetworkWithOfflineStatus();
     const [introSelected] = useOnyx(ONYXKEYS.NVP_INTRO_SELECTED);
@@ -224,6 +225,25 @@ function useReportActionsScroll({
             reportScrollManager.scrollToBottom();
         });
     }, [draftAutoScrollKey, hasNewestReportAction, previousDraftAutoScrollKey, reportScrollManager, scrollOffsetRef, setIsFloatingMessageCounterVisible]);
+
+    useEffect(() => {
+        if (!linkedReportActionID || !previousLinkedReportActionID || previousLinkedReportActionID === linkedReportActionID) {
+            return;
+        }
+
+        const linkedActionIndex = sortedVisibleReportActions.findIndex((action) => action.reportActionID === linkedReportActionID);
+        if (linkedActionIndex === -1) {
+            return;
+        }
+
+        const handle = TransitionTracker.runAfterTransitions({
+            callback: () => {
+                reportScrollManager.scrollToIndex(linkedActionIndex);
+                setActionIdToHighlight(linkedReportActionID);
+            },
+        });
+        return () => handle.cancel();
+    }, [linkedReportActionID, previousLinkedReportActionID, sortedVisibleReportActions, reportScrollManager]);
 
     useEffect(() => {
         if (initialScrollKey) {
