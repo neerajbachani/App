@@ -27,6 +27,7 @@ import type {SaveCorpayOnboardingCompanyDetails} from '@libs/API/parameters/Save
 import type SaveCorpayOnboardingDirectorInformationParams from '@libs/API/parameters/SaveCorpayOnboardingDirectorInformationParams';
 import {READ_COMMANDS, WRITE_COMMANDS} from '@libs/API/types';
 import {getMicroSecondOnyxErrorWithTranslationKey} from '@libs/ErrorUtils';
+import Log from '@libs/Log';
 import createDynamicRoute from '@libs/Navigation/helpers/dynamicRoutesUtils/createDynamicRoute';
 import Navigation from '@libs/Navigation/Navigation';
 import * as NetworkStore from '@libs/Network/NetworkStore';
@@ -85,9 +86,6 @@ type OpenPersonalBankAccountSetupViewProps = {
 
     /** Whether the user is validated */
     isUserValidated?: boolean;
-
-    /** Route to navigate to after adding a bank account when the KYC flow should continue */
-    onSuccessFallbackRoute?: Route;
 };
 
 type VBBAOnyxKey =
@@ -118,39 +116,19 @@ function setPlaidEvent(eventName: string | null) {
 }
 
 /**
- * Opens the personal bank account setup flow and resets PERSONAL_BANK_ACCOUNT state before navigation.
- * Any existing PERSONAL_BANK_ACCOUNT data is fully replaced with only the fields passed to this function,
- * so callers that pass no parameters (e.g. Wallet > Add bank account) clear all existing data including
- * a leftover onSuccessFallbackRoute from a previous flow.
+ * Open the personal bank account setup flow, with an optional exitReportID to redirect to once the flow is finished.
  */
-function openPersonalBankAccountSetupView({
-    exitReportID,
-    policyID,
-    source,
-    shouldSetUpUSBankAccount = false,
-    isUserValidated = true,
-    onSuccessFallbackRoute,
-}: OpenPersonalBankAccountSetupViewProps) {
+function openPersonalBankAccountSetupView({exitReportID, policyID, source, shouldSetUpUSBankAccount = false, isUserValidated = true}: OpenPersonalBankAccountSetupViewProps) {
     clearInternationalBankAccount().then(() => {
-        const personalBankAccountState: Partial<PersonalBankAccount> = {};
-
         if (exitReportID) {
-            personalBankAccountState.exitReportID = exitReportID;
+            Onyx.merge(ONYXKEYS.PERSONAL_BANK_ACCOUNT, {exitReportID});
         }
         if (policyID) {
-            personalBankAccountState.policyID = policyID;
+            Onyx.merge(ONYXKEYS.PERSONAL_BANK_ACCOUNT, {policyID});
         }
         if (source) {
-            personalBankAccountState.source = source;
+            Onyx.merge(ONYXKEYS.PERSONAL_BANK_ACCOUNT, {source});
         }
-        if (onSuccessFallbackRoute) {
-            personalBankAccountState.onSuccessFallbackRoute = onSuccessFallbackRoute;
-        }
-
-        // Use set instead of merge so each new flow starts with only the fields we explicitly pass, not leftover fields from a previous flow.
-        Onyx.set(ONYXKEYS.PERSONAL_BANK_ACCOUNT, Object.keys(personalBankAccountState).length > 0 ? personalBankAccountState : null);
-        Onyx.set(ONYXKEYS.FORMS.PERSONAL_BANK_ACCOUNT_FORM_DRAFT, null);
-
         if (!isUserValidated) {
             Navigation.navigate(createDynamicRoute(DYNAMIC_ROUTES.ADD_BANK_ACCOUNT_VERIFY_ACCOUNT.path));
             return;
@@ -317,13 +295,9 @@ function setPersonalBankAccountContinueKYCOnSuccess(onSuccessFallbackRoute: Rout
     Onyx.merge(ONYXKEYS.PERSONAL_BANK_ACCOUNT, {onSuccessFallbackRoute});
 }
 
-/**
- * Clears personal bank account state, Plaid data, and the form draft.
- * Pass `preservedData` to retain specific fields (e.g. onSuccessFallbackRoute) across the reset.
- */
-function clearPersonalBankAccount(preservedData?: Partial<PersonalBankAccount>) {
+function clearPersonalBankAccount() {
     clearPlaid();
-    Onyx.set(ONYXKEYS.PERSONAL_BANK_ACCOUNT, preservedData ?? null);
+    Onyx.set(ONYXKEYS.PERSONAL_BANK_ACCOUNT, null);
     Onyx.set(ONYXKEYS.FORMS.PERSONAL_BANK_ACCOUNT_FORM_DRAFT, null);
     clearPersonalBankAccountSetupType();
 }
@@ -1401,6 +1375,10 @@ function uploadUserKYBDocs(parameters: UploadUserKYBDocsParams) {
 }
 
 function openWorkspaceView(policyID: string | undefined) {
+    Log.hmmm('[WorkspaceInvoices] openWorkspaceView optimistic isLoading write', {policyID});
+
+    const workspaceViewHasOnceLoadedKey = policyID ? (`${ONYXKEYS.COLLECTION.POLICY_WORKSPACE_VIEW_HAS_ONCE_LOADED}${policyID}` as const) : undefined;
+
     API.read(
         READ_COMMANDS.OPEN_WORKSPACE_VIEW,
         {
@@ -1424,6 +1402,15 @@ function openWorkspaceView(policyID: string | undefined) {
                         isLoading: false,
                     },
                 },
+                ...(workspaceViewHasOnceLoadedKey
+                    ? [
+                          {
+                              onyxMethod: Onyx.METHOD.MERGE,
+                              key: workspaceViewHasOnceLoadedKey,
+                              value: true,
+                          },
+                      ]
+                    : []),
             ],
             failureData: [
                 {
@@ -1864,7 +1851,6 @@ export {
     addPersonalBankAccount,
     clearOnfidoToken,
     clearPersonalBankAccount,
-    setPersonalBankAccountContinueKYCOnSuccess,
     resetPersonalBankAccountForUpdate,
     setPlaidEvent,
     openPlaidView,
@@ -1873,6 +1859,7 @@ export {
     createCorpayBankAccount,
     deletePaymentBankAccount,
     handlePlaidError,
+    setPersonalBankAccountContinueKYCOnSuccess,
     openPersonalBankAccountSetupView,
     openReimbursementAccountPage,
     updateBeneficialOwnersForBankAccount,

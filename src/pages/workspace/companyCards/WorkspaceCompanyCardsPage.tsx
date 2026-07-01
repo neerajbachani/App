@@ -11,6 +11,7 @@ import usePolicy from '@hooks/usePolicy';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useWorkspaceDocumentTitle from '@hooks/useWorkspaceDocumentTitle';
 import {getDomainOrWorkspaceAccountID} from '@libs/CardUtils';
+import Log from '@libs/Log';
 import type {PlatformStackScreenProps} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {WorkspaceSplitNavigatorParamList} from '@libs/Navigation/types';
 import {canMemberWrite, getMemberAccountIDsForWorkspace} from '@libs/PolicyUtils';
@@ -65,15 +66,26 @@ function WorkspaceCompanyCardsPage({route}: WorkspaceCompanyCardsPageProps) {
 
     const isLoading = !isOffline && (!allCardFeeds || (isFeedAdded && isLoadingOnyxValue(cardListMetadata)));
 
-    const hasFeedsLoaded = !!allCardFeeds && Object.keys(allCardFeeds).length > 0;
+    useEffect(() => {
+        Log.hmmm('[WorkspaceCompanyCards] WorkspaceCompanyCardsPage mounted', {
+            policyID,
+            domainOrWorkspaceAccountID,
+            bankName,
+            isOffline,
+        });
+    }, [policyID, domainOrWorkspaceAccountID, bankName, isOffline]);
 
     useEffect(() => {
-        if (isOffline || hasFeedsLoaded) {
+        if (isOffline) {
             return;
         }
 
+        Log.hmmm('[WorkspaceCompanyCards] loadPolicyCompanyCardsPage effect fired', {
+            policyID,
+            domainOrWorkspaceAccountID,
+        });
         loadPolicyCompanyCardsPage();
-    }, [loadPolicyCompanyCardsPage, isOffline, hasFeedsLoaded]);
+    }, [loadPolicyCompanyCardsPage, isOffline]);
 
     const loadPolicyCompanyCardsFeed = useCallback(() => {
         if (isLoading || !bankName || isFeedPending || isOffline) {
@@ -84,6 +96,14 @@ function WorkspaceCompanyCardsPage({route}: WorkspaceCompanyCardsPageProps) {
     }, [bankName, domainOrWorkspaceAccountID, isFeedPending, isLoading, policyID, translate, isOffline]);
 
     useEffect(() => {
+        Log.hmmm('[WorkspaceCompanyCards] loadPolicyCompanyCardsFeed effect fired', {
+            policyID,
+            domainOrWorkspaceAccountID,
+            bankName,
+            isLoading,
+            isFeedPending,
+            isOffline,
+        });
         loadPolicyCompanyCardsFeed();
     }, [loadPolicyCompanyCardsFeed]);
 

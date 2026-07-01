@@ -1,6 +1,6 @@
 import {useIsFocused} from '@react-navigation/native';
 import type {ReactNode} from 'react';
-import React, {useEffect, useMemo} from 'react';
+import React, {useEffect, useMemo, useRef} from 'react';
 import {View} from 'react-native';
 import type {OnyxEntry} from 'react-native-onyx';
 import ActivityIndicator from '@components/ActivityIndicator';
@@ -18,6 +18,7 @@ import usePrevious from '@hooks/usePrevious';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useThemeStyles from '@hooks/useThemeStyles';
 import {openWorkspaceView} from '@libs/actions/BankAccounts';
+import Log from '@libs/Log';
 import goBackFromWorkspaceSettingPages from '@libs/Navigation/helpers/goBackFromWorkspaceSettingPages';
 import Navigation from '@libs/Navigation/Navigation';
 import {canEditWorkspaceSettings, canMemberRead, isPendingDeletePolicy, shouldShowPolicy as shouldShowPolicyUtil} from '@libs/PolicyUtils';
@@ -31,6 +32,7 @@ import {isEmptyObject} from '@src/types/utils/EmptyObject';
 import type IconAsset from '@src/types/utils/IconAsset';
 import type {WithPolicyAndFullscreenLoadingProps} from './withPolicyAndFullscreenLoading';
 import withPolicyAndFullscreenLoading from './withPolicyAndFullscreenLoading';
+import getWorkspacePageVBALoadingState from './getWorkspacePageVBALoadingState';
 
 type WorkspacePageWithSectionsProps = WithPolicyAndFullscreenLoadingProps &
     Pick<HeaderWithBackButtonProps, 'shouldShowThreeDotsButton' | 'threeDotsMenuItems' | 'shouldShowBackButton' | 'onBackButtonPress'> & {
@@ -146,9 +148,15 @@ function WorkspacePageWithSections({
 
     const [account] = useOnyx(ONYXKEYS.ACCOUNT);
     const [reimbursementAccount = CONST.REIMBURSEMENT_ACCOUNT.DEFAULT_DATA] = useOnyx(ONYXKEYS.REIMBURSEMENT_ACCOUNT);
+    const [workspaceViewHasOnceLoaded] = useOnyx(`${ONYXKEYS.COLLECTION.POLICY_WORKSPACE_VIEW_HAS_ONCE_LOADED}${policyID}`);
     const {login: currentUserLogin = ''} = useCurrentUserPersonalDetails();
 
-    const isLoading = isPageLoading ? true : !shouldSkipVBBACall && (reimbursementAccount?.isLoading ?? false);
+    const isVBALoading = getWorkspacePageVBALoadingState({
+        shouldSkipVBBACall,
+        isReimbursementAccountLoading: reimbursementAccount?.isLoading ?? false,
+        workspaceViewHasOnceLoaded,
+    });
+    const isLoading = isPageLoading ? true : isVBALoading;
     const isUsingECard = account?.isUsingExpensifyCard ?? false;
     const content = typeof children === 'function' ? children(policyID, isUsingECard) : children;
     const {shouldUseNarrowLayout} = useResponsiveLayout();
@@ -162,6 +170,24 @@ function WorkspacePageWithSections({
         fetchData(policyID, shouldSkipVBBACall);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    const prevIsLoadingRef = useRef(isLoading);
+
+    useEffect(() => {
+        if (!isLoading || prevIsLoadingRef.current) {
+            prevIsLoadingRef.current = isLoading;
+            return;
+        }
+
+        Log.hmmm('[WorkspaceInvoices] WorkspacePageWithSections loading state became true', {
+            policyID,
+            workspaceViewHasOnceLoaded,
+            isReimbursementAccountLoading: reimbursementAccount?.isLoading ?? false,
+            shouldSkipVBBACall,
+        });
+        prevIsLoadingRef.current = isLoading;
+    }, [isLoading, policyID, reimbursementAccount?.isLoading, shouldSkipVBBACall, workspaceViewHasOnceLoaded]);
+
     const shouldShowPolicy = useMemo(() => shouldShowPolicyUtil(policy, false, currentUserLogin), [policy, currentUserLogin]);
     let hasAccessToPolicyFeature: boolean | undefined;
     if (policyFeature) {
@@ -251,6 +277,7 @@ function WorkspacePageWithSections({
                                     context: 'WorkspacePageWithSections',
                                     isLoading,
                                     shouldShowInitialLoading,
+                                    workspaceViewHasOnceLoaded: !!workspaceViewHasOnceLoaded,
                                 } satisfies SkeletonSpanReasonAttributes
                             }
                         />

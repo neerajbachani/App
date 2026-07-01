@@ -360,9 +360,6 @@ const ONYXKEYS = {
     /** Object containing Onfido SDK Token + applicantID */
     RAM_ONLY_WALLET_ONFIDO: 'walletOnfido',
 
-    /** Stores information whether wallet data is stale */
-    RAM_ONLY_HAS_FRESH_WALLET_DATA: 'hasFreshWalletData',
-
     /** Stores information about additional details form entry */
     WALLET_ADDITIONAL_DETAILS: 'walletAdditionalDetails',
 
@@ -790,6 +787,15 @@ const ONYXKEYS = {
         // should not be included as part of the policy object. The policy
         // object should mirror the data as it's stored in the database.
         POLICY_HAS_CONNECTIONS_DATA_BEEN_FETCHED: 'policyHasConnectionsDataBeenFetched_',
+        // Whether the policy's company cards page data has been loaded at least once.
+        // This state only exists client-side and should not be included as part of the policy object.
+        POLICY_COMPANY_CARDS_PAGE_HAS_ONCE_LOADED: 'policyCompanyCardsPageHasOnceLoaded_',
+        // Whether each company card feed has been loaded at least once for a policy.
+        // This state only exists client-side and should not be included as part of the policy object.
+        POLICY_COMPANY_CARDS_FEED_HAS_ONCE_LOADED: 'policyCompanyCardsFeedHasOnceLoaded_',
+        // Whether the policy's workspace view (VBA/invoices) data has been loaded at least once.
+        // This state only exists client-side and should not be included as part of the policy object.
+        POLICY_WORKSPACE_VIEW_HAS_ONCE_LOADED: 'policyWorkspaceViewHasOnceLoaded_',
         POLICY_CONNECTION_SYNC_PROGRESS: 'policyConnectionSyncProgress_',
         POLICY_MERGE_HR_INITIAL_SYNC_MODAL_SHOWN: 'policyMergeHRInitialSyncModalShown_',
         WORKSPACE_INVITE_MEMBERS_DRAFT: 'workspaceInviteMembersDraft_',
@@ -1194,6 +1200,7 @@ const ONYXKEYS = {
         NON_PERSONAL_AND_WORKSPACE_CARD_LIST: 'nonPersonalAndWorkspaceCardList',
         PERSONAL_AND_WORKSPACE_CARD_LIST: 'personalAndWorkspaceCardList',
         CARD_FEED_ERRORS: 'cardFeedErrors',
+        TODOS: 'todos',
         RAM_ONLY_SORTED_REPORT_ACTIONS: 'sortedReportActions',
         FLAGGED_EXPENSES: 'flaggedExpenses',
     },
@@ -1349,6 +1356,9 @@ type OnyxCollectionValuesMapping = {
     [ONYXKEYS.COLLECTION.POLICY_RECENTLY_USED_CATEGORIES]: OnyxTypes.RecentlyUsedCategories;
     [ONYXKEYS.COLLECTION.POLICY_RECENTLY_USED_DESTINATIONS]: OnyxTypes.RecentlyUsedCategories;
     [ONYXKEYS.COLLECTION.POLICY_HAS_CONNECTIONS_DATA_BEEN_FETCHED]: boolean;
+    [ONYXKEYS.COLLECTION.POLICY_COMPANY_CARDS_PAGE_HAS_ONCE_LOADED]: boolean;
+    [ONYXKEYS.COLLECTION.POLICY_COMPANY_CARDS_FEED_HAS_ONCE_LOADED]: Record<string, boolean>;
+    [ONYXKEYS.COLLECTION.POLICY_WORKSPACE_VIEW_HAS_ONCE_LOADED]: boolean;
     [ONYXKEYS.COLLECTION.DEPRECATED_POLICY_MEMBER_LIST]: OnyxTypes.PolicyEmployeeList;
     [ONYXKEYS.COLLECTION.WORKSPACE_INVITE_MEMBERS_DRAFT]: OnyxTypes.InvitedEmailsToAccountIDs;
     [ONYXKEYS.COLLECTION.WORKSPACE_INVITE_MESSAGE_DRAFT]: string;
@@ -1517,7 +1527,6 @@ type OnyxValuesMapping = {
     [ONYXKEYS.NVP_PRIVATE_BILLING_STATUS]: OnyxTypes.BillingStatus;
     [ONYXKEYS.USER_WALLET]: OnyxTypes.UserWallet;
     [ONYXKEYS.RAM_ONLY_WALLET_ONFIDO]: OnyxTypes.WalletOnfido;
-    [ONYXKEYS.RAM_ONLY_HAS_FRESH_WALLET_DATA]: boolean;
     [ONYXKEYS.WALLET_ADDITIONAL_DETAILS]: OnyxTypes.WalletAdditionalDetails;
     [ONYXKEYS.WALLET_TERMS]: OnyxTypes.WalletTerms;
     [ONYXKEYS.BANK_ACCOUNT_LIST]: OnyxTypes.BankAccountList;
@@ -1681,6 +1690,7 @@ type OnyxDerivedValuesMapping = {
     [ONYXKEYS.DERIVED.NON_PERSONAL_AND_WORKSPACE_CARD_LIST]: OnyxTypes.NonPersonalAndWorkspaceCardListDerivedValue;
     [ONYXKEYS.DERIVED.PERSONAL_AND_WORKSPACE_CARD_LIST]: OnyxTypes.PersonalAndWorkspaceCardListDerivedValue;
     [ONYXKEYS.DERIVED.CARD_FEED_ERRORS]: OnyxTypes.CardFeedErrorsDerivedValue;
+    [ONYXKEYS.DERIVED.TODOS]: OnyxTypes.TodosDerivedValue;
     [ONYXKEYS.DERIVED.RAM_ONLY_SORTED_REPORT_ACTIONS]: OnyxTypes.SortedReportActionsDerivedValue;
     [ONYXKEYS.DERIVED.FLAGGED_EXPENSES]: OnyxTypes.FlaggedExpensesDerivedValue;
 };

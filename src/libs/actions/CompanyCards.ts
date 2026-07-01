@@ -20,6 +20,7 @@ import * as CardUtils from '@libs/CardUtils';
 import {getCardFeedWithDomainID} from '@libs/CardUtils';
 import parseCSVDate from '@libs/CSVDateUtils';
 import * as ErrorUtils from '@libs/ErrorUtils';
+import Log from '@libs/Log';
 import Navigation from '@libs/Navigation/Navigation';
 import {rand64} from '@libs/NumberUtils';
 import * as PersonalDetailsUtils from '@libs/PersonalDetailsUtils';
@@ -921,12 +922,21 @@ function clearCompanyCardErrorField(domainOrWorkspaceAccountID: number, cardID: 
 function openPolicyCompanyCardsPage(policyID: string, domainOrWorkspaceAccountID: number, emailList: string[], translate: LocaleContextProps['translate']) {
     // Skip loading state writes when domainOrWorkspaceAccountID is 0 since Onyx discards writes to collection keys with member ID '0'.
     const onyxLoadingStateUpdates = domainOrWorkspaceAccountID !== CONST.DEFAULT_NUMBER_ID;
+    const pageHasOnceLoadedKey = `${ONYXKEYS.COLLECTION.POLICY_COMPANY_CARDS_PAGE_HAS_ONCE_LOADED}${policyID}` as const;
+    const domainMemberKey = `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainOrWorkspaceAccountID}` as const;
 
-    const optimisticData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = onyxLoadingStateUpdates
+    if (onyxLoadingStateUpdates) {
+        Log.hmmm('[WorkspaceCompanyCards] openPolicyCompanyCardsPage optimistic isLoading write', {
+            policyID,
+            domainOrWorkspaceAccountID,
+        });
+    }
+
+    const optimisticData: Array<OnyxUpdate<typeof domainMemberKey>> = onyxLoadingStateUpdates
         ? [
               {
                   onyxMethod: Onyx.METHOD.MERGE,
-                  key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainOrWorkspaceAccountID}`,
+                  key: domainMemberKey,
                   value: {
                       isLoading: true,
                       errors: null,
@@ -935,23 +945,30 @@ function openPolicyCompanyCardsPage(policyID: string, domainOrWorkspaceAccountID
           ]
         : [];
 
-    const successData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = onyxLoadingStateUpdates
-        ? [
-              {
-                  onyxMethod: Onyx.METHOD.MERGE,
-                  key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainOrWorkspaceAccountID}`,
-                  value: {
-                      isLoading: false,
+    const successData: Array<OnyxUpdate<typeof domainMemberKey> | OnyxUpdate<typeof pageHasOnceLoadedKey>> = [
+        ...(onyxLoadingStateUpdates
+            ? [
+                  {
+                      onyxMethod: Onyx.METHOD.MERGE,
+                      key: domainMemberKey,
+                      value: {
+                          isLoading: false,
+                      },
                   },
-              },
-          ]
-        : [];
+              ]
+            : []),
+        {
+            onyxMethod: Onyx.METHOD.MERGE,
+            key: pageHasOnceLoadedKey,
+            value: true,
+        },
+    ];
 
-    const failureData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = onyxLoadingStateUpdates
+    const failureData: Array<OnyxUpdate<typeof domainMemberKey>> = onyxLoadingStateUpdates
         ? [
               {
                   onyxMethod: Onyx.METHOD.MERGE,
-                  key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainOrWorkspaceAccountID}`,
+                  key: domainMemberKey,
                   value: {
                       isLoading: false,
                       errors: {
@@ -977,10 +994,19 @@ function openPolicyCompanyCardsFeed(domainAccountID: number, policyID: string, f
         feed,
     };
 
-    const optimisticData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = [
+    const domainMemberKey = `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainAccountID}` as const;
+    const feedHasOnceLoadedKey = `${ONYXKEYS.COLLECTION.POLICY_COMPANY_CARDS_FEED_HAS_ONCE_LOADED}${policyID}` as const;
+
+    Log.hmmm('[WorkspaceCompanyCards] openPolicyCompanyCardsFeed optimistic isLoading write', {
+        policyID,
+        domainAccountID,
+        feed,
+    });
+
+    const optimisticData: Array<OnyxUpdate<typeof domainMemberKey>> = [
         {
             onyxMethod: Onyx.METHOD.MERGE,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainAccountID}`,
+            key: domainMemberKey,
             value: {
                 settings: {
                     cardFeedsStatus: {
@@ -994,10 +1020,10 @@ function openPolicyCompanyCardsFeed(domainAccountID: number, policyID: string, f
         },
     ];
 
-    const successData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = [
+    const successData: Array<OnyxUpdate<typeof domainMemberKey> | OnyxUpdate<typeof feedHasOnceLoadedKey>> = [
         {
             onyxMethod: Onyx.METHOD.MERGE,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainAccountID}`,
+            key: domainMemberKey,
             value: {
                 settings: {
                     cardFeedsStatus: {
@@ -1008,12 +1034,19 @@ function openPolicyCompanyCardsFeed(domainAccountID: number, policyID: string, f
                 },
             },
         },
-    ];
-
-    const failureData: Array<OnyxUpdate<typeof ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER>> = [
         {
             onyxMethod: Onyx.METHOD.MERGE,
-            key: `${ONYXKEYS.COLLECTION.SHARED_NVP_PRIVATE_DOMAIN_MEMBER}${domainAccountID}`,
+            key: feedHasOnceLoadedKey,
+            value: {
+                [feed]: true,
+            },
+        },
+    ];
+
+    const failureData: Array<OnyxUpdate<typeof domainMemberKey>> = [
+        {
+            onyxMethod: Onyx.METHOD.MERGE,
+            key: domainMemberKey,
             value: {
                 settings: {
                     cardFeedsStatus: {
