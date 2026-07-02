@@ -2,7 +2,7 @@ import React from 'react';
 import {View} from 'react-native';
 import {CHART_TYPE} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/constants';
 import {useVictoryChartContext} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/context/VictoryChartContext';
-import computeChartScale from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/computeChartScale';
+import computeChartScale, {computeChartScaleForViewport} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/computeChartScale';
 import {resolveChartContainerBgColor} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/resolveChartThemeColor';
 import useSafeAreaInsets from '@hooks/useSafeAreaInsets';
 import useTheme from '@hooks/useTheme';
@@ -13,15 +13,21 @@ import useWindowDimensions from '@hooks/useWindowDimensions';
 // Used instead of onLayout because Yoga inflates the container width to match the fixed-width chart child.
 const CHAT_MESSAGE_HORIZONTAL_PADDING = 92;
 
+// Horizontal space consumed by the full-screen chart modal's horizontal padding.
+const MODAL_HORIZONTAL_PADDING = 40;
+
+// Vertical space reserved for the modal header and chart area padding (excluding safe area insets).
+const MODAL_VERTICAL_PADDING = 80;
+
 /** @see POLAR_CONTAINER_HEIGHT_RATIO in VictoryChartContainerFixed */
 const POLAR_CONTAINER_HEIGHT_RATIO = 0.9;
 
-function VictoryChartContainer({children}: {children: React.ReactNode}) {
+function VictoryChartContainer({children, maxScale = 1, availableViewportHeight}: {children: React.ReactNode; maxScale?: number; availableViewportHeight?: number}) {
     const styles = useThemeStyles();
     const theme = useTheme();
     const {chartContentStyles, chartContainerStyles, type} = useVictoryChartContext();
-    const {windowWidth} = useWindowDimensions();
-    const {left: safeAreaLeft, right: safeAreaRight} = useSafeAreaInsets();
+    const {windowWidth, windowHeight} = useWindowDimensions();
+    const {left: safeAreaLeft, right: safeAreaRight, top: safeAreaTop, bottom: safeAreaBottom} = useSafeAreaInsets();
 
     const designWidth = typeof chartContentStyles.width === 'number' ? chartContentStyles.width : undefined;
     const designHeight = typeof chartContentStyles.height === 'number' ? chartContentStyles.height : undefined;
@@ -29,8 +35,17 @@ function VictoryChartContainer({children}: {children: React.ReactNode}) {
     const isPolar = type === CHART_TYPE.POLAR;
     const effectiveDesignHeight = isPolar && designHeight ? designHeight * POLAR_CONTAINER_HEIGHT_RATIO : designHeight;
 
-    const availableWidth = windowWidth - safeAreaLeft - safeAreaRight - CHAT_MESSAGE_HORIZONTAL_PADDING;
-    const scale = hasExplicitDimensions ? computeChartScale(designWidth, availableWidth) : 1;
+    const isFullscreen = maxScale > 1;
+    const horizontalPadding = isFullscreen ? MODAL_HORIZONTAL_PADDING : CHAT_MESSAGE_HORIZONTAL_PADDING;
+    const availableWidth = windowWidth - safeAreaLeft - safeAreaRight - horizontalPadding;
+    const availableHeight = isFullscreen
+        ? (availableViewportHeight ?? windowHeight - safeAreaTop - safeAreaBottom - MODAL_VERTICAL_PADDING)
+        : undefined;
+    const scale = hasExplicitDimensions
+        ? isFullscreen
+            ? computeChartScaleForViewport(designWidth, designHeight, availableWidth, availableHeight, maxScale)
+            : computeChartScale(designWidth, availableWidth, maxScale)
+        : 1;
 
     const {backgroundColor: rawBgColor, borderRadius, ...layoutContainerStyles} = chartContainerStyles;
     const backgroundColor = resolveChartContainerBgColor(rawBgColor, theme);

@@ -1,10 +1,12 @@
 import React from 'react';
+import type {CSSProperties} from 'react';
 import type {ViewStyle} from 'react-native';
 import {View} from 'react-native';
 import {CHART_TYPE} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/constants';
 import {useVictoryChartContext} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/context/VictoryChartContext';
 import {resolveChartContainerBgColor} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/resolveChartThemeColor';
 import useTheme from '@hooks/useTheme';
+import getVictoryChartContainerStyleBase from './getVictoryChartContainerStyleBase';
 import type {VictoryChartContainerLayout, VictoryChartContainerThemeStyles} from './types';
 
 /**
@@ -29,18 +31,28 @@ function VictoryChartContainerFixed({children, layout, themeStyles}: VictoryChar
     const layoutKind = layout.kind;
     const fixedWidth = layout.kind === 'fixed' ? layout.width : undefined;
     const fixedHeight = layout.kind === 'fixed' ? layout.height : undefined;
+    const scaledDesignWidth = layout.kind === 'scaled' ? layout.designWidth : undefined;
     const scaledDesignHeight = layout.kind === 'scaled' ? layout.designHeight : undefined;
     const scaledScale = layout.kind === 'scaled' ? layout.scale : undefined;
     const isPolar = type === CHART_TYPE.POLAR;
 
-    const containerStyleBase: ViewStyle[] = [themeStyles?.mw100, themeStyles?.container, layoutContainerStyles].filter((style): style is ViewStyle => !!style);
+    const containerStyleBase = getVictoryChartContainerStyleBase(layoutKind, themeStyles, layoutContainerStyles);
     let containerStyle: ViewStyle[] = containerStyleBase;
 
     if (layoutKind === 'fixed' && fixedWidth !== undefined && fixedHeight !== undefined) {
         containerStyle = [...containerStyleBase, {width: fixedWidth, height: fixedHeight, borderRadius: 0, overflow: 'hidden'}];
-    } else if (layoutKind === 'scaled' && scaledDesignHeight !== undefined && scaledScale !== undefined) {
+    } else if (layoutKind === 'scaled' && scaledDesignWidth !== undefined && scaledDesignHeight !== undefined && scaledScale !== undefined) {
         const effectiveHeight = isPolar ? scaledDesignHeight * POLAR_CONTAINER_HEIGHT_RATIO : scaledDesignHeight;
-        containerStyle = [...containerStyleBase, {borderRadius: isPolar ? borderRadius : 0, height: effectiveHeight * scaledScale, overflow: 'hidden'}];
+        containerStyle = [
+            ...containerStyleBase,
+            {
+                width: scaledDesignWidth * scaledScale,
+                height: effectiveHeight * scaledScale,
+                alignSelf: 'flex-start',
+                borderRadius: isPolar ? borderRadius : 0,
+                overflow: 'hidden',
+            },
+        ];
     }
 
     const contentStyle: ViewStyle[] = [];
@@ -51,8 +63,25 @@ function VictoryChartContainerFixed({children, layout, themeStyles}: VictoryChar
 
     contentStyle.push(chartContentStyles, {backgroundColor, borderRadius, overflow: 'hidden'});
 
-    if (layoutKind === 'scaled' && scaledScale !== undefined && scaledScale < 1) {
-        contentStyle.push({transform: [{scale: scaledScale}], transformOrigin: 'top left'});
+    const scaledContentTransformStyle: CSSProperties | undefined =
+        layoutKind === 'scaled' && scaledDesignWidth !== undefined && scaledDesignHeight !== undefined && scaledScale !== undefined
+            ? {
+                  width: scaledDesignWidth,
+                  height: scaledDesignHeight,
+                  transform: `scale(${scaledScale})`,
+                  transformOrigin: 'top left',
+              }
+            : undefined;
+
+    if (scaledContentTransformStyle) {
+        return (
+            <View style={containerStyle}>
+                {/* A DOM wrapper is required on web because React Native View does not reliably apply transformOrigin. */}
+                <div style={scaledContentTransformStyle}>
+                    <View style={contentStyle}>{children}</View>
+                </div>
+            </View>
+        );
     }
 
     return (

@@ -2,12 +2,20 @@ import React, {useState} from 'react';
 import type {LayoutChangeEvent} from 'react-native';
 import {View} from 'react-native';
 import {useVictoryChartContext} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/context/VictoryChartContext';
-import computeChartScale from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/computeChartScale';
+import computeChartScale, {computeChartScaleForViewport} from '@components/HTMLEngineProvider/HTMLRenderers/VictoryChartRenderer/utils/computeChartScale';
 import useThemeStyles from '@hooks/useThemeStyles';
 import type {VictoryChartContainerLayout} from './types';
 import VictoryChartContainerFixed from './VictoryChartContainerFixed';
 
-function VictoryChartContainerResponsive({children}: {children: React.ReactNode}) {
+function VictoryChartContainerResponsive({
+    children,
+    maxScale = 1,
+    availableViewportHeight,
+}: {
+    children: React.ReactNode;
+    maxScale?: number;
+    availableViewportHeight?: number;
+}) {
     const styles = useThemeStyles();
     const {chartContentStyles} = useVictoryChartContext();
     const [containerWidth, setContainerWidth] = useState(0);
@@ -20,7 +28,12 @@ function VictoryChartContainerResponsive({children}: {children: React.ReactNode}
         setContainerWidth(event.nativeEvent.layout.width);
     };
 
-    const scale = hasDesignDimensions ? computeChartScale(designWidth, containerWidth) : 1;
+    const isFullscreen = maxScale > 1;
+    const scale = hasDesignDimensions
+        ? isFullscreen
+            ? computeChartScaleForViewport(designWidth, designHeight, containerWidth, availableViewportHeight, maxScale)
+            : computeChartScale(designWidth, containerWidth, maxScale)
+        : 1;
 
     const themeStyles = {
         container: styles.chartContainer,
@@ -28,7 +41,8 @@ function VictoryChartContainerResponsive({children}: {children: React.ReactNode}
         mw100: styles.mw100,
     };
 
-    const layout: VictoryChartContainerLayout = hasDesignDimensions && designHeight ? {kind: 'scaled', designHeight, scale} : {kind: 'fluid'};
+    const layout: VictoryChartContainerLayout =
+        hasDesignDimensions && designHeight && designWidth ? {kind: 'scaled', designWidth, designHeight, scale} : {kind: 'fluid'};
 
     if (!hasDesignDimensions) {
         return (
