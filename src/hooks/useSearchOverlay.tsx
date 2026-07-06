@@ -71,9 +71,9 @@ function useSearchOverlay({
 
     const [isSearchReady, setIsSearchReady] = useState(() => !hasDeferredWrite(CONST.DEFERRED_LAYOUT_WRITE_KEYS.SEARCH) && !Navigation.getIsFullscreenPreInsertedUnderRHP());
 
-    const onSearchContentReady = () => {
-        setIsSearchReady(true);
-    };
+    const onSearchContentReady = useCallback(() => {
+        setIsSearchReady((prev) => (prev ? prev : true));
+    }, []);
 
     // Re-arm the overlay on focus when a new deferred write was registered
     // (e.g. a subsequent submit flow while Search stays mounted).
