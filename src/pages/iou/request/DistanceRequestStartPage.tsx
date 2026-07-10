@@ -3,6 +3,7 @@ import HeaderWithBackButton from '@components/HeaderWithBackButton';
 import ScreenWrapper from '@components/ScreenWrapper';
 import TabSelector from '@components/TabSelector/TabSelector';
 
+import useKeyboardState from '@hooks/useKeyboardState';
 import useLocalize from '@hooks/useLocalize';
 import useOnyx from '@hooks/useOnyx';
 import usePolicyForTransaction from '@hooks/usePolicyForTransaction';
@@ -48,6 +49,7 @@ function DistanceRequestStartPage({
     defaultSelectedTab = CONST.TAB_REQUEST.DISTANCE_MAP,
 }: DistanceRequestStartPageProps) {
     const styles = useThemeStyles();
+    const {isKeyboardShown} = useKeyboardState();
     const {translate} = useLocalize();
     const [report] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportID}`);
     const [transaction] = useOnyx(`${ONYXKEYS.COLLECTION.TRANSACTION_DRAFT}${getNonEmptyStringOnyxID(route?.params.transactionID)}`);
@@ -112,7 +114,7 @@ function DistanceRequestStartPage({
             accessVariants={[CONST.IOU.ACCESS_VARIANTS.CREATE]}
         >
             <ScreenWrapper
-                shouldEnableKeyboardAvoidingView={selectedTab === CONST.TAB_REQUEST.DISTANCE_ODOMETER}
+                shouldEnableKeyboardAvoidingView={selectedTab === CONST.TAB_REQUEST.DISTANCE_ODOMETER || isKeyboardShown}
                 shouldEnableMinHeight={canUseTouchScreen()}
                 testID="DistanceRequestStartPage"
                 focusTrapSettings={{containerElements: focusTrapContainerElements}}
