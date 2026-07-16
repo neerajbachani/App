@@ -72,7 +72,12 @@ function useSearchOverlay({
     const [isSearchReady, setIsSearchReady] = useState(() => !hasDeferredWrite(CONST.DEFERRED_LAYOUT_WRITE_KEYS.SEARCH) && !Navigation.getIsFullscreenPreInsertedUnderRHP());
 
     const onSearchContentReady = useCallback(() => {
-        setIsSearchReady((prev) => (prev ? prev : true));
+        // The ready signal can arrive from timing-dependent paths (observed on
+        // Android) while another component is still rendering. Scheduling the
+        // state update in a microtask guarantees it runs after the current render
+        // stack unwinds, on every platform. The update is idempotent and not
+        // frame-critical (a 5s safety timeout already exists), so deferral is safe.
+        queueMicrotask(() => setIsSearchReady((prev) => prev || true));
     }, []);
 
     // Re-arm the overlay on focus when a new deferred write was registered
