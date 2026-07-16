@@ -137,6 +137,7 @@ function DistanceRequestStartPage({
                         onTabBarFocusTrapContainerElementChanged={setTabBarContainerElement}
                         onActiveTabFocusTrapContainerElementChanged={setActiveTabContainerElement}
                         lazyLoadEnabled
+                        shouldDismissKeyboardBeforeTabSwitch
                     >
                         <TopTab.Screen name={CONST.TAB_REQUEST.DISTANCE_MAP}>
                             {() => (
