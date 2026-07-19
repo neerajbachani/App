@@ -9,7 +9,6 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useTransactionsAndViolationsForReport from '@hooks/useTransactionsAndViolationsForReport';
 
 import {turnOffMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
-import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 import type {PlatformStackRouteProp} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {ReportsSplitNavigatorParamList, RightModalNavigatorParamList} from '@libs/Navigation/types';
 
@@ -107,40 +106,26 @@ function MoneyReportHeaderContent({reportID: reportIDProp, shouldDisplayBackButt
     const isFocused = useIsFocused();
 
     useEffect(() => {
-        logSelectionModeTrace('MoneyReportHeader', 'mount');
         return () => {
-            logSelectionModeTrace('MoneyReportHeader', 'unmount cleanup turnOff', {reportID: reportIDProp});
             turnOffMobileSelectionMode();
         };
-    }, [reportIDProp]);
+    }, []);
 
     // Only manage selection mode while this report screen is focused. Otherwise a report header that stays mounted in
     // the navigation stack (e.g. after navigating to another screen) would turn off the global selection mode that the
     // other screen just enabled. See https://github.com/Expensify/App/issues/95132.
     useEffect(() => {
-        const visibleTransactions = transactions.filter((t) => t.pendingAction !== CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE || isOffline);
-        logSelectionModeTrace('MoneyReportHeader', 'selection guard effect', {
-            reportID: reportIDProp,
-            routeName: route.name,
-            isFocused,
-            isMobileSelectionModeEnabled,
-            shouldUseNarrowLayout,
-            visibleTransactions: visibleTransactions.length,
-            willTurnOff: isFocused && isMobileSelectionModeEnabled && shouldUseNarrowLayout && visibleTransactions.length <= 1,
-        });
-
         if (!isFocused || !isMobileSelectionModeEnabled || !shouldUseNarrowLayout) {
             return;
         }
         // If mobile selection mode is enabled but only one or no transactions remain, turn it off
+        const visibleTransactions = transactions.filter((t) => t.pendingAction !== CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE || isOffline);
         if (visibleTransactions.length <= 1) {
-            logSelectionModeTrace('MoneyReportHeader', 'turnOff — focused single-transaction guard');
             turnOffMobileSelectionMode();
         }
-    }, [isFocused, isMobileSelectionModeEnabled, shouldUseNarrowLayout, transactions, isOffline, reportIDProp, route.name]);
+    }, [isFocused, isMobileSelectionModeEnabled, shouldUseNarrowLayout, transactions, isOffline]);
 
     if (isFocused && isMobileSelectionModeEnabled && shouldUseNarrowLayout) {
-        logSelectionModeTrace('MoneyReportHeader', 'render selectMultiple header', {reportID: reportIDProp, routeName: route.name});
         return (
             <HeaderWithBackButton
                 title={translate('common.selectMultiple')}

@@ -7,7 +7,6 @@ import useMobileSelectionMode from '@hooks/useMobileSelectionMode';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 
 import {turnOnMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
-import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 
 import CONST from '@src/CONST';
 
@@ -254,7 +253,6 @@ function Table<DataType extends TableData, ColumnKey extends string = string, Fi
     const isEmptyResult = processedData.length === 0 && originalDataLength > 0 && (hasActiveSearchString || hasActiveFilters);
 
     const handleMobileSelectionPress = () => {
-        logSelectionModeTrace('Table', 'handleMobileSelectionPress — turning on', {title, mobileSelectionModalRowKey});
         turnOnMobileSelectionMode();
 
         if (mobileSelectionModalRowKey) {

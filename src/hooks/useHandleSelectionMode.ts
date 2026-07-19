@@ -1,7 +1,6 @@
 import type {ListItem} from '@components/SelectionList/types';
 
 import {turnOffMobileSelectionMode, turnOnMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
-import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 
 import {useIsFocused} from '@react-navigation/native';
 import {useEffect, useRef} from 'react';
@@ -19,44 +18,26 @@ function useHandleSelectionMode<TItem extends ListItem>(selectedItems: readonly 
     const wasSelectionOnRef = useRef(false);
 
     useEffect(() => {
-        logSelectionModeTrace('useHandleSelectionMode', 'effect', {
-            isSmallScreenWidth,
-            isFocused,
-            selectedItemsCount: selectedItems.length,
-            isMobileSelectionModeEnabled,
-            wasSelectionOn: wasSelectionOnRef.current,
-        });
-
         if (!isSmallScreenWidth) {
             if (selectedItems.length === 0 && isMobileSelectionModeEnabled) {
-                logSelectionModeTrace('useHandleSelectionMode', 'turnOff — desktop with no selected items');
                 turnOffMobileSelectionMode();
             }
             return;
         }
         if (!isFocused) {
-            logSelectionModeTrace('useHandleSelectionMode', 'skip — unfocused');
             return;
         }
         if (!wasSelectionOnRef.current && selectedItems.length > 0) {
             wasSelectionOnRef.current = true;
         }
         if (selectedItems.length > 0 && !isMobileSelectionModeEnabled) {
-            logSelectionModeTrace('useHandleSelectionMode', 'turnOn — selected items while mode off');
             turnOnMobileSelectionMode();
         } else if (selectedItems.length === 0 && isMobileSelectionModeEnabled && !wasSelectionOnRef.current) {
-            logSelectionModeTrace('useHandleSelectionMode', 'turnOff — focused with no items and external selection mode');
             turnOffMobileSelectionMode();
         }
     }, [isMobileSelectionModeEnabled, isSmallScreenWidth, isFocused, selectedItems.length]);
 
-    useEffect(
-        () => () => {
-            logSelectionModeTrace('useHandleSelectionMode', 'unmount cleanup turnOff');
-            turnOffMobileSelectionMode();
-        },
-        [],
-    );
+    useEffect(() => () => turnOffMobileSelectionMode(), []);
 }
 
 export default useHandleSelectionMode;
