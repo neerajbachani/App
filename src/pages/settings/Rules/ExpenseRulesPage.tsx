@@ -34,7 +34,8 @@ import type DeepValueOf from '@src/types/utils/DeepValueOf';
 import getEmptyArray from '@src/types/utils/getEmptyArray';
 import isLoadingOnyxValue from '@src/types/utils/isLoadingOnyxValue';
 
-import React, {useEffect, useState} from 'react';
+import {useFocusEffect} from '@react-navigation/native';
+import React, {useCallback, useEffect, useState} from 'react';
 import {View} from 'react-native';
 
 const getKeyForList = (rule: ExpenseRule, index: number) => `${getKeyForRule(rule)}-${index}`;
@@ -59,6 +60,15 @@ function ExpenseRulesPage() {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedRules([]);
     }, [expenseRules]);
+
+    // Swipe-back does not go through the header back handler, so clear global selection mode when leaving this screen.
+    useFocusEffect(
+        useCallback(() => {
+            return () => {
+                turnOffMobileSelectionMode();
+            };
+        }, []),
+    );
 
     const hasRules = expenseRules.filter((rule) => isOffline || rule.pendingAction !== CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE).length > 0;
     const isLoading = !hasRules && isLoadingOnyxValue(expenseRulesResult);

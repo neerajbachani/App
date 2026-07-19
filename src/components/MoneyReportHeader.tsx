@@ -29,7 +29,7 @@ import MoneyReportHeaderMoreContent from './MoneyReportHeaderMoreContent';
 import MoneyRequestReportNavigation from './MoneyRequestReportView/MoneyRequestReportNavigation';
 import MoneyRequestReportTransactionsNavigation from './MoneyRequestReportView/MoneyRequestReportTransactionsNavigation';
 import {PaymentAnimationsProvider} from './PaymentAnimationsContext';
-import {useSearchSelectionActions} from './Search/SearchContext';
+import {useSearchSelectionActions, useSearchSelectionContext} from './Search/SearchContext';
 
 type MoneyReportHeaderProps = {
     /** The reportID of the report currently being looked at */
@@ -58,6 +58,7 @@ function MoneyReportHeader({reportID, shouldDisplayBackButton = false, onBackBut
 
 function MoneyReportHeaderContent({reportID: reportIDProp, shouldDisplayBackButton = false, onBackButtonPress}: MoneyReportHeaderProps) {
     const {clearSelectedTransactions} = useSearchSelectionActions();
+    const {selectedTransactionIDs} = useSearchSelectionContext();
     const [moneyRequestReport] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${reportIDProp}`);
 
     // We need to use isSmallScreenWidth instead of shouldUseNarrowLayout to use a correct layout for the hold expense modal https://github.com/Expensify/App/pull/47990#issuecomment-2362382026
@@ -107,9 +108,11 @@ function MoneyReportHeaderContent({reportID: reportIDProp, shouldDisplayBackButt
 
     useEffect(() => {
         return () => {
-            turnOffMobileSelectionMode();
+            if (isFocused) {
+                turnOffMobileSelectionMode();
+            }
         };
-    }, []);
+    }, [isFocused]);
 
     // Only manage selection mode while this report screen is focused. Otherwise a report header that stays mounted in
     // the navigation stack (e.g. after navigating to another screen) would turn off the global selection mode that the
@@ -118,14 +121,20 @@ function MoneyReportHeaderContent({reportID: reportIDProp, shouldDisplayBackButt
         if (!isFocused || !isMobileSelectionModeEnabled || !shouldUseNarrowLayout) {
             return;
         }
-        // If mobile selection mode is enabled but only one or no transactions remain, turn it off
         const visibleTransactions = transactions.filter((t) => t.pendingAction !== CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE || isOffline);
+        // If mobile selection mode is enabled but only one or no transactions remain, turn it off
         if (visibleTransactions.length <= 1) {
             turnOffMobileSelectionMode();
+            return;
         }
-    }, [isFocused, isMobileSelectionModeEnabled, shouldUseNarrowLayout, transactions, isOffline]);
+        // Multi-transaction report: ignore stale global selection from another screen (e.g. Expense rules) until this
+        // report actually has selected transactions.
+        if (selectedTransactionIDs.length === 0) {
+            turnOffMobileSelectionMode();
+        }
+    }, [isFocused, isMobileSelectionModeEnabled, shouldUseNarrowLayout, transactions, isOffline, selectedTransactionIDs.length]);
 
-    if (isFocused && isMobileSelectionModeEnabled && shouldUseNarrowLayout) {
+    if (isFocused && isMobileSelectionModeEnabled && shouldUseNarrowLayout && selectedTransactionIDs.length > 0) {
         return (
             <HeaderWithBackButton
                 title={translate('common.selectMultiple')}
