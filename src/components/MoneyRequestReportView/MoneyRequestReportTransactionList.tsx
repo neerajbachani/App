@@ -35,6 +35,7 @@ import {turnOnMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
 import {getReportLayoutGroupBy, getReportLayoutSelection, setReportLayout} from '@libs/actions/ReportLayout';
 import {clearActiveTransactionIDs, getActiveTransactionIDs, setActiveTransactionIDs} from '@libs/actions/TransactionThreadNavigation';
 import {resolveTransactionCardFields} from '@libs/CardUtils';
+import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 import {hasNonReimbursableTransactions, isBillableEnabledOnPolicy} from '@libs/MoneyRequestReportUtils';
 import {navigationRef} from '@libs/Navigation/Navigation';
 import {isPolicyTaxEnabled} from '@libs/PolicyUtils';
@@ -79,7 +80,7 @@ import type {PendingAction} from '@src/types/onyx/OnyxCommon';
 // eslint-disable-next-line no-restricted-imports
 import type {LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, ScrollView as RNScrollView} from 'react-native';
 
-import {findFocusedRoute, useFocusEffect} from '@react-navigation/native';
+import {findFocusedRoute, useFocusEffect, useIsFocused} from '@react-navigation/native';
 import {personalDetailsLoginSelector} from '@selectors/PersonalDetails';
 import {validTransactionDraftIDsSelector} from '@selectors/TransactionDraft';
 import isEmpty from 'lodash/isEmpty';
@@ -259,6 +260,26 @@ function MoneyRequestReportTransactionList({
 
     const {selectedTransactionIDs} = useSearchSelectionContext();
     const {setSelectedTransactions, clearSelectedTransactions} = useSearchSelectionActions();
+    const isScreenFocused = useIsFocused();
+
+    useEffect(() => {
+        logSelectionModeTrace('MoneyRequestReportTransactionList', 'mount', {
+            reportID: report?.reportID,
+            transactionsCount: transactions.length,
+        });
+        return () => {
+            logSelectionModeTrace('MoneyRequestReportTransactionList', 'unmount', {reportID: report?.reportID});
+        };
+    }, [report?.reportID, transactions.length]);
+
+    useEffect(() => {
+        logSelectionModeTrace('MoneyRequestReportTransactionList', 'focus changed', {
+            reportID: report?.reportID,
+            isScreenFocused,
+            selectedTransactionIDsCount: selectedTransactionIDs.length,
+        });
+    }, [isScreenFocused, report?.reportID, selectedTransactionIDs.length]);
+
     useHandleSelectionMode(selectedTransactionIDs);
     const isMobileSelectionModeEnabled = useMobileSelectionMode();
 

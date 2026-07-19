@@ -21,6 +21,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 
 import {turnOffMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
 import {clearDraftRule, clearExpenseRuleErrors, deleteExpenseRules, setDraftRule} from '@libs/actions/User';
+import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 import {formatExpenseRuleChanges, getKeyForRule} from '@libs/ExpenseRuleUtils';
 import Navigation from '@libs/Navigation/Navigation';
 import Parser from '@libs/Parser';
@@ -66,6 +67,16 @@ function ExpenseRulesPage() {
     const canSelectMultiple = !shouldUseNarrowLayout || isMobileSelectionModeEnabled;
     const selectionModeHeader = isMobileSelectionModeEnabled && shouldUseNarrowLayout;
     const isInSelectionMode = shouldUseNarrowLayout ? canSelectMultiple : selectedRules.length > 0;
+
+    useEffect(() => {
+        logSelectionModeTrace('ExpenseRulesPage', 'selection state changed', {
+            isMobileSelectionModeEnabled,
+            shouldUseNarrowLayout,
+            selectedRulesCount: selectedRules.length,
+            canSelectMultiple,
+            isInSelectionMode,
+        });
+    }, [isMobileSelectionModeEnabled, shouldUseNarrowLayout, selectedRules.length, canSelectMultiple, isInSelectionMode]);
 
     const navigateToNewRulePage = () => {
         clearDraftRule();

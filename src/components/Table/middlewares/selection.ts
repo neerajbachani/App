@@ -6,6 +6,7 @@ import usePrevious from '@hooks/usePrevious';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 
 import {turnOffMobileSelectionMode, turnOnMobileSelectionMode} from '@libs/actions/MobileSelectionMode';
+import {logSelectionModeTrace} from '@libs/debug/SelectionModeTrace';
 
 import type {Dispatch, SetStateAction} from 'react';
 
@@ -103,9 +104,22 @@ export default function useSelection<DataType extends TableData>({
         const isDesktopWithoutSelectableKeys = isSelectionModeEnabled && !selectableKeys.length && !selectionUsesNarrowLayout;
         const isSelectionModeEnabledWithoutSelectableKeys = isSelectionModeEnabled && !selectableKeys.length && !originalSelectableCount;
 
+        logSelectionModeTrace('Table.selectionMiddleware', 'sync effect', {
+            selectionUsesNarrowLayout,
+            isSelectionModeEnabled,
+            selectedKeysCount: selectedKeys.length,
+            selectableKeysCount: selectableKeys.length,
+            originalSelectableCount,
+            isMobileMissingSelectionMode,
+            isDesktopWithoutSelectableKeys,
+            isSelectionModeEnabledWithoutSelectableKeys,
+        });
+
         if (isMobileMissingSelectionMode) {
+            logSelectionModeTrace('Table.selectionMiddleware', 'turnOn — mobile missing selection mode');
             turnOnMobileSelectionMode();
         } else if (isDesktopWithoutSelectableKeys || isSelectionModeEnabledWithoutSelectableKeys) {
+            logSelectionModeTrace('Table.selectionMiddleware', 'turnOff — no selectable keys');
             turnOffMobileSelectionMode();
         }
     }, [selectionUsesNarrowLayout, isSelectionModeEnabled, selectedKeys.length, originalSelectableCount, selectableKeys.length]);
@@ -117,6 +131,7 @@ export default function useSelection<DataType extends TableData>({
             return;
         }
 
+        logSelectionModeTrace('Table.selectionMiddleware', 'clearSelection — selection mode turned off', {selectedKeysCount: selectedKeys.length});
         clearSelection();
     }, [isSelectionModeEnabled, selectedKeys.length, clearSelection, wasSelectionModeEnabled]);
 
