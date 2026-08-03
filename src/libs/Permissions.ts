@@ -17,6 +17,11 @@ function canUseLinkPreviews(): boolean {
 }
 
 function isBetaEnabled(beta: Beta, betas: OnyxEntry<Beta[]>, betaConfiguration?: OnyxEntry<BetaConfiguration>): boolean {
+    // LOCAL REPRO ONLY (#93096): remove before opening PR to Expensify/App
+    if (beta === CONST.BETAS.SUBMIT_2026) {
+        return true;
+    }
+
     const hasAllBetasEnabled = canUseAllBetas(betas);
     const isFeatureEnabled = !!betas?.includes(beta);
 
