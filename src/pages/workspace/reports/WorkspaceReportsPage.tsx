@@ -17,6 +17,7 @@ import {useMemoizedLazyExpensifyIcons, useMemoizedLazyIllustrations} from '@hook
 import useLocalize from '@hooks/useLocalize';
 import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
+import usePermissions from '@hooks/usePermissions';
 import usePolicy from '@hooks/usePolicy';
 import usePolicyFeatureWriteAccess from '@hooks/usePolicyFeatureWriteAccess';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
@@ -29,7 +30,14 @@ import {getLatestErrorField} from '@libs/ErrorUtils';
 import Navigation from '@libs/Navigation/Navigation';
 import type {PlatformStackScreenProps} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {WorkspaceSplitNavigatorParamList} from '@libs/Navigation/types';
-import {getConnectedIntegration, getCurrentConnectionName, hasAccountingConnections as hasAccountingConnectionsPolicyUtils, isControlPolicy, shouldShowSyncError} from '@libs/PolicyUtils';
+import {
+    getConnectedIntegration,
+    getCurrentConnectionName,
+    hasAccountingConnections as hasAccountingConnectionsPolicyUtils,
+    isControlPolicy,
+    shouldShowSyncError,
+    tryNavigateToSubmitWorkspaceUpgrade,
+} from '@libs/PolicyUtils';
 import {getTitleFieldWithFallback} from '@libs/ReportUtils';
 import type {SkeletonSpanReasonAttributes} from '@libs/telemetry/useSkeletonSpan';
 import {getReportFieldTypeTranslationKey} from '@libs/WorkspaceReportFieldUtils';
@@ -73,6 +81,8 @@ function WorkspaceReportFieldsPage({
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const styles = useThemeStyles();
     const {translate, localeCompare} = useLocalize();
+    const {isBetaEnabled} = usePermissions();
+    const isSubmit2026BetaEnabled = isBetaEnabled(CONST.BETAS.SUBMIT_2026);
     const policy = usePolicy(policyID);
     const {showConfirmModal} = useConfirmModal();
     const {canWrite: canWriteReportFields, withReadOnlyFallback} = usePolicyFeatureWriteAccess(policy, CONST.POLICY.POLICY_FEATURE.REPORT_FIELDS);
@@ -270,7 +280,19 @@ function WorkspaceReportFieldsPage({
                                 titleStyle={toggleTitleStyle}
                                 isActive={titleField?.deletable === false}
                                 onToggle={(isEnabled) => {
-                                    if (isEnabled && !isControlPolicy(policy)) {
+                                    if (
+                                        isEnabled &&
+                                        tryNavigateToSubmitWorkspaceUpgrade(
+                                            policy,
+                                            isEnabled,
+                                            CONST.UPGRADE_FEATURE_INTRO_MAPPING.policyPreventMemberChangingTitle.alias,
+                                            ROUTES.WORKSPACE_REPORTS.getRoute(policyID),
+                                        )
+                                    ) {
+                                        return;
+                                    }
+
+                                    if (isEnabled && !isSubmit2026BetaEnabled && !isControlPolicy(policy)) {
                                         Navigation.navigate(
                                             ROUTES.WORKSPACE_UPGRADE.getRoute(
                                                 policyID,
@@ -317,7 +339,17 @@ function WorkspaceReportFieldsPage({
                                         });
                                         return;
                                     }
-                                    if (!isControlPolicy(policy)) {
+                                    if (
+                                        tryNavigateToSubmitWorkspaceUpgrade(
+                                            policy,
+                                            isEnabled,
+                                            CONST.UPGRADE_FEATURE_INTRO_MAPPING.reportFields.alias,
+                                            ROUTES.WORKSPACE_REPORTS.getRoute(policyID),
+                                        )
+                                    ) {
+                                        return;
+                                    }
+                                    if (!isSubmit2026BetaEnabled && !isControlPolicy(policy)) {
                                         Navigation.navigate(
                                             ROUTES.WORKSPACE_UPGRADE.getRoute(policyID, CONST.UPGRADE_FEATURE_INTRO_MAPPING.reportFields.alias, ROUTES.WORKSPACE_REPORTS.getRoute(policyID)),
                                         );
