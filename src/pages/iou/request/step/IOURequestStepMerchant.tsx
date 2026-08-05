@@ -60,6 +60,7 @@ function IOURequestStepMerchant({
     const [policyCategories] = useOnyx(`${ONYXKEYS.COLLECTION.POLICY_CATEGORIES}${report?.policyID}`);
     const [policyTags] = useOnyx(`${ONYXKEYS.COLLECTION.POLICY_TAGS}${report?.policyID}`);
     const [parentReport] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${getNonEmptyStringOnyxID(report?.parentReportID)}`);
+    const [parentReportNextStep] = useOnyx(`${ONYXKEYS.COLLECTION.NEXT_STEP}${getNonEmptyStringOnyxID(report?.parentReportID)}`);
     const [iouReportOwnerLogin] = useOnyx(ONYXKEYS.PERSONAL_DETAILS_LIST, {selector: personalDetailsLoginSelector(parentReport?.ownerAccountID)});
     const [isTrackIntentUser] = useOnyx(ONYXKEYS.NVP_INTRO_SELECTED, {selector: isTrackIntentUserSelector});
     const styles = useThemeStyles();
@@ -76,7 +77,6 @@ function IOURequestStepMerchant({
     const initialMerchant = isEmptyMerchant ? '' : merchant;
     const [currentMerchant, setCurrentMerchant] = useState(initialMerchant);
     const [isSaved, setIsSaved] = useState(false);
-    const [isDiscardModalVisible, setIsDiscardModalVisible] = useState(false);
     const currentUserPersonalDetails = useCurrentUserPersonalDetails();
     const delegateAccountID = useDelegateAccountID();
     const currentUserAccountIDParam = currentUserPersonalDetails.accountID;
@@ -151,6 +151,7 @@ function IOURequestStepMerchant({
                 currentUserAccountIDParam,
                 currentUserEmailParam,
                 isASAPSubmitBetaEnabled,
+                parentReportNextStep,
                 isOffline,
                 delegateAccountID,
                 reportPolicyTags,
@@ -175,7 +176,6 @@ function IOURequestStepMerchant({
             }
             return currentMerchant !== initialMerchant;
         },
-        onVisibilityChange: setIsDiscardModalVisible,
     });
 
     return (
@@ -207,7 +207,6 @@ function IOURequestStepMerchant({
                         label={translate('common.merchant')}
                         accessibilityLabel={translate('common.merchant')}
                         role={CONST.ROLE.PRESENTATION}
-                        editable={!isDiscardModalVisible}
                         ref={inputCallbackRef}
                     />
                 </View>

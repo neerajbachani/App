@@ -6,6 +6,8 @@ import useLocalize from '@hooks/useLocalize';
 import navigationRef from '@libs/Navigation/navigationRef';
 import {useRegisterTabSwitchGuard} from '@libs/Navigation/TabSwitchGuardContext';
 
+import KeyboardUtils from '@src/utils/keyboard';
+
 import type {NavigationAction} from '@react-navigation/native';
 
 import {useFocusEffect, useIsFocused, usePreventRemove, useRoute} from '@react-navigation/native';
@@ -46,26 +48,35 @@ function useDiscardChangesConfirmation({
         blockedNavigationAction.current = blockedAction;
         isDiscardModalOpen.current = true;
         onVisibilityChange?.(true);
-        showConfirmModal(getDiscardChangesModalConfig(translate)).then((result) => {
-            isDiscardModalOpen.current = false;
-            onVisibilityChange?.(false);
-            if (result.action !== ModalActions.CONFIRM) {
-                blockedNavigationAction.current = undefined;
-                onCancel?.();
+        // Dismiss through RN's bookkeeping (resolves on keyboardDidHide) so the modal never presents
+        // behind the keyboard, and so we never resign first responder by flipping editable=false.
+        KeyboardUtils.dismiss().then(() => {
+            // A second Back while dismiss() is in flight is swallowed by isDiscardModalOpen above;
+            // still bail if the screen was torn down before the keyboard finished hiding.
+            if (!isDiscardModalOpen.current) {
                 return;
             }
-            const confirmNavigation = () => {
-                isReplayingBlockedNavigation.current = true;
-                if (blockedNavigationAction.current) {
-                    navigationRef.current?.dispatch(blockedNavigationAction.current);
+            showConfirmModal(getDiscardChangesModalConfig(translate)).then((result) => {
+                isDiscardModalOpen.current = false;
+                onVisibilityChange?.(false);
+                if (result.action !== ModalActions.CONFIRM) {
                     blockedNavigationAction.current = undefined;
-                } else {
-                    navigationRef.current?.goBack();
+                    onCancel?.();
+                    return;
                 }
-                isReplayingBlockedNavigation.current = false;
-            };
-            runDiscardConfirmation(onConfirm, confirmNavigation, () => {
-                blockedNavigationAction.current = undefined;
+                const confirmNavigation = () => {
+                    isReplayingBlockedNavigation.current = true;
+                    if (blockedNavigationAction.current) {
+                        navigationRef.current?.dispatch(blockedNavigationAction.current);
+                        blockedNavigationAction.current = undefined;
+                    } else {
+                        navigationRef.current?.goBack();
+                    }
+                    isReplayingBlockedNavigation.current = false;
+                };
+                runDiscardConfirmation(onConfirm, confirmNavigation, () => {
+                    blockedNavigationAction.current = undefined;
+                });
             });
         });
     };

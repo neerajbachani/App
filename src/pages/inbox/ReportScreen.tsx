@@ -4,6 +4,7 @@ import ScreenWrapper from '@components/ScreenWrapper';
 import WideRHPOverlayWrapper from '@components/WideRHPOverlayWrapper';
 
 import {useCurrentReportIDState} from '@hooks/useCurrentReportID';
+import useKeyboardState from '@hooks/useKeyboardState';
 import useOnyx from '@hooks/useOnyx';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useSubmitToDestinationVisible from '@hooks/useSubmitToDestinationVisible';
@@ -82,6 +83,8 @@ function ReportScreen({route, navigation, shouldDeferReportActions = false}: Rep
     const {currentReportID: currentReportIDValue} = useCurrentReportIDState();
     const viewportOffsetTop = useViewportOffsetTop();
     const isTopMostReportId = currentReportIDValue === reportIDFromRoute;
+    const {isKeyboardShown, isKeyboardActive} = useKeyboardState();
+    const shouldEnableKeyboardAvoidingView = (isTopMostReportId || isInNarrowPaneModal) && (isKeyboardShown || isKeyboardActive);
     const screenWrapperStyle: ViewStyle[] = [styles.appContent, styles.flex1, {marginTop: viewportOffsetTop}];
 
     const shouldDeferNonEssentials = useDeferNonEssentials(reportIDFromRoute);
@@ -118,7 +121,7 @@ function ReportScreen({route, navigation, shouldDeferReportActions = false}: Rep
                         <ScreenWrapper
                             navigation={navigation}
                             style={screenWrapperStyle}
-                            shouldEnableKeyboardAvoidingView={isTopMostReportId || isInNarrowPaneModal}
+                            shouldEnableKeyboardAvoidingView={shouldEnableKeyboardAvoidingView}
                             testID={`report-screen-${reportIDFromRoute}`}
                         >
                             {!shouldDeferNonEssentials && (
