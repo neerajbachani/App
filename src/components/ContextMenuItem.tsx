@@ -117,6 +117,9 @@ function ContextMenuItem({
             onPress={triggerPressAndUpdateSuccess}
             isDelayButtonStateComplete={!isThrottledButtonActive}
             shouldPreventDefaultFocusOnPress={shouldPreventDefaultFocusOnPress}
+            isFocused={isFocused}
+            onFocus={onFocus}
+            onBlur={onBlur}
             sentryLabel={sentryLabel}
         >
             {({hovered, pressed}) => (

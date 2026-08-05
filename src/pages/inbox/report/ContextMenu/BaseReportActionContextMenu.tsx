@@ -4,6 +4,7 @@ import ContextMenuItem from '@components/ContextMenuItem';
 import {useDelegateNoAccessActions, useDelegateNoAccessState} from '@components/DelegateNoAccessModalProvider';
 import FocusTrapForModal from '@components/FocusTrap/FocusTrapForModal';
 import {usePersonalDetails, useSession} from '@components/OnyxListItemProvider';
+import {MINI_QUICK_EMOJI_REACTIONS_BUTTON_COUNT} from '@components/Reactions/MiniQuickEmojiReactions';
 
 import useArrowKeyFocusManager from '@hooks/useArrowKeyFocusManager';
 import useBottomSafeSafeAreaPaddingStyle from '@hooks/useBottomSafeSafeAreaPaddingStyle';
@@ -169,6 +170,7 @@ function BaseReportActionContextMenu({
     // eslint-disable-next-line rulesdir/prefer-shouldUseNarrowLayout-instead-of-isSmallScreenWidth
     const {shouldUseNarrowLayout, isSmallScreenWidth} = useResponsiveLayout();
     const [shouldKeepOpen, setShouldKeepOpen] = useState(false);
+    const [isMiniMenuFocused, setIsMiniMenuFocused] = useState(false);
     const wrapperStyle = StyleUtils.getReportActionContextMenuStyles(isMini, shouldUseNarrowLayout);
     const {isOffline} = useNetwork();
     const {isProduction, isDevelopment, environment} = useEnvironment();
@@ -285,7 +287,9 @@ function BaseReportActionContextMenu({
     const isChronosReport = chatIncludesChronosWithID(originalReportID);
     const isPinnedChat = !!report?.isPinned;
     const isUnreadChat = isUnread(report, lhnOneTransactionThreadReport, isOriginalReportArchived);
-    const shouldEnableArrowNavigation = !isMini && (isVisible || shouldKeepOpen);
+    // The mini menu is mounted for every hovered report action, so its arrow key navigation is only enabled while the
+    // keyboard focus actually sits on one of its buttons. Otherwise it would swallow the arrow keys of the composer and the message list.
+    const shouldEnableArrowNavigation = isMini ? isMiniMenuFocused : isVisible || shouldKeepOpen;
     const isHarvestReport = isHarvestCreatedExpenseReport(reportNameValuePairs?.origin, reportNameValuePairs?.originalID);
     const memberChangeLogReportActionMessage = isMemberChangeAction(reportAction) ? getOriginalMessage(reportAction) : undefined;
     const [memberChangeLogRoomReport] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${getNonEmptyStringOnyxID(`${memberChangeLogReportActionMessage?.reportID}`)}`);
@@ -338,13 +342,25 @@ function BaseReportActionContextMenu({
     const nonMenuItemActionIndexes = filteredContextMenuActions.map((contextAction, index) =>
         'renderContent' in contextAction && typeof contextAction.renderContent === 'function' ? index : undefined,
     );
-    const disabledIndexes = nonMenuItemActionIndexes.filter((index): index is number => index !== undefined);
+    // In the mini menu the quick reaction action is not a single menu item: it renders one button per quick reaction plus the
+    // emoji picker button. Each of those buttons gets its own slot in the arrow navigation index space so they can be reached.
+    const quickReactionsActionIndex = isMini ? nonMenuItemActionIndexes.findIndex((index) => index !== undefined) : -1;
+    const hasMiniQuickReactions = quickReactionsActionIndex !== -1;
+    const extraQuickReactionsIndexes = hasMiniQuickReactions ? MINI_QUICK_EMOJI_REACTIONS_BUTTON_COUNT - 1 : 0;
+
+    /** Maps the index of an action to the index of its menu item in the arrow navigation index space */
+    const getArrowNavigationIndex = (actionIndex: number) => (actionIndex > quickReactionsActionIndex ? actionIndex + extraQuickReactionsIndexes : actionIndex);
+
+    const disabledIndexes = hasMiniQuickReactions ? CONST.EMPTY_ARRAY : nonMenuItemActionIndexes.filter((index): index is number => index !== undefined);
 
     const [focusedIndex, setFocusedIndex] = useArrowKeyFocusManager({
         initialFocusedIndex: -1,
         disabledIndexes,
-        maxIndex: filteredContextMenuActions.length - 1,
+        maxIndex: filteredContextMenuActions.length - 1 + extraQuickReactionsIndexes,
         isActive: shouldEnableArrowNavigation,
+
+        // The mini menu is a single horizontal row, so it is navigated with the left and right arrow keys
+        allowHorizontalArrowKeys: isMini,
     });
 
     /**
@@ -455,6 +471,12 @@ function BaseReportActionContextMenu({
                                 reportAttributes,
                                 originalReportOfUnapprovedTransaction,
                                 memberChangeLogRoomReportName,
+                                miniQuickReactionsFocusedIndex: hasMiniQuickReactions ? focusedIndex - quickReactionsActionIndex : undefined,
+                                onMiniQuickReactionsItemFocus: (quickReactionIndex: number) => {
+                                    setIsMiniMenuFocused(true);
+                                    setFocusedIndex(quickReactionsActionIndex + quickReactionIndex);
+                                },
+                                onMiniQuickReactionsItemBlur: () => setIsMiniMenuFocused(false),
                             };
 
                             if ('renderContent' in contextAction) {
@@ -486,10 +508,24 @@ function BaseReportActionContextMenu({
                                     }
                                     description={contextAction.getDescription?.(selection) ?? ''}
                                     isAnonymousAction={contextAction.isAnonymousAction}
-                                    isFocused={focusedIndex === index}
+                                    isFocused={focusedIndex === getArrowNavigationIndex(index)}
                                     shouldPreventDefaultFocusOnPress={contextAction.shouldPreventDefaultFocusOnPress}
-                                    onFocus={() => setFocusedIndex(index)}
-                                    onBlur={() => (index === filteredContextMenuActions.length - 1 || index === 1) && setFocusedIndex(-1)}
+                                    onFocus={() => {
+                                        if (isMini) {
+                                            setIsMiniMenuFocused(true);
+                                        }
+                                        setFocusedIndex(getArrowNavigationIndex(index));
+                                    }}
+                                    onBlur={() => {
+                                        if (isMini) {
+                                            setIsMiniMenuFocused(false);
+                                            return;
+                                        }
+
+                                        if (index === filteredContextMenuActions.length - 1 || index === 1) {
+                                            setFocusedIndex(-1);
+                                        }
+                                    }}
                                     disabled={contextAction?.shouldDisable ? contextAction?.shouldDisable(download) : false}
                                     shouldShowLoadingSpinnerIcon={contextAction?.shouldDisable ? contextAction?.shouldDisable(download) : false}
                                     sentryLabel={contextAction.sentryLabel}

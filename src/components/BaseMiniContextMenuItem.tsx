@@ -10,9 +10,10 @@ import variables from '@styles/variables';
 import CONST from '@src/CONST';
 import type WithSentryLabel from '@src/types/utils/SentryLabel';
 
-import type {PressableStateCallbackType} from 'react-native';
+// eslint-disable-next-line no-restricted-imports
+import type {PressableStateCallbackType, Text as RNText} from 'react-native';
 
-import React from 'react';
+import React, {useEffect, useRef} from 'react';
 import {View} from 'react-native';
 
 import type {PressableRef} from './Pressable/GenericPressable/types';
@@ -46,6 +47,22 @@ type BaseMiniContextMenuItemProps = WithSentryLabel & {
     shouldPreventDefaultFocusOnPress?: boolean;
 
     /**
+     * Whether the item is the one currently selected by the arrow key navigation of the menu it belongs to.
+     * When it becomes selected the item takes DOM focus, so the focus ring and Enter follow the arrow keys.
+     */
+    isFocused?: boolean;
+
+    /**
+     * Handles what to do when the item is focused
+     */
+    onFocus?: () => void;
+
+    /**
+     * Handles what to do when the item loses focus
+     */
+    onBlur?: () => void;
+
+    /**
      * Reference to the outer element
      */
     ref?: PressableRef;
@@ -61,19 +78,43 @@ function BaseMiniContextMenuItem({
     children,
     isDelayButtonStateComplete = true,
     shouldPreventDefaultFocusOnPress = true,
+    isFocused = false,
+    onFocus = () => {},
+    onBlur = () => {},
     ref,
     sentryLabel,
 }: BaseMiniContextMenuItemProps) {
     const styles = useThemeStyles();
     const StyleUtils = useStyleUtils();
+    const pressableRef = useRef<HTMLDivElement | View | RNText | null>(null);
+
+    // Keep the real browser focus in sync with the arrow key selection, so the focus ring and Enter act on the same item.
+    useEffect(() => {
+        if (!isFocused || !pressableRef.current || !('focus' in pressableRef.current)) {
+            return;
+        }
+        pressableRef.current.focus({preventScroll: true});
+    }, [isFocused]);
+
     return (
         <Tooltip
             text={tooltipText}
             shouldRender
         >
             <PressableWithoutFeedback
-                ref={ref}
+                ref={(element) => {
+                    pressableRef.current = element ?? null;
+
+                    if (typeof ref === 'function') {
+                        ref(element);
+                    } else if (ref) {
+                        // eslint-disable-next-line no-param-reassign
+                        ref.current = element;
+                    }
+                }}
                 onPress={onPress}
+                onFocus={onFocus}
+                onBlur={onBlur}
                 onMouseDown={(event) => {
                     if (!ReportActionComposeFocusManager.isFocused() && !ReportActionComposeFocusManager.isEditFocused()) {
                         const activeElement = DomUtils.getActiveElement();

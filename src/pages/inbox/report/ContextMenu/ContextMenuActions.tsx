@@ -361,6 +361,15 @@ type ContextMenuActionPayload = {
     delegateAccountID: number | undefined;
     reportAttributes: ReportAttributesDerivedValue['reports'] | undefined;
     memberChangeLogRoomReportName: string | undefined;
+
+    /** Index of the quick reaction button that the mini context menu arrow key navigation currently selects, relative to the quick reaction row */
+    miniQuickReactionsFocusedIndex?: number;
+
+    /** Called with the index of the quick reaction button that received focus, relative to the quick reaction row */
+    onMiniQuickReactionsItemFocus?: (index: number) => void;
+
+    /** Called when one of the quick reaction buttons loses focus */
+    onMiniQuickReactionsItemBlur?: () => void;
 };
 
 type OnPress = (closePopover: boolean, payload: ContextMenuActionPayload, selection?: string, reportID?: string) => void;
@@ -434,7 +443,21 @@ const ContextMenuActions: ContextMenuAction[] = [
             const isDynamicWorkflowRoutedAction = isActionOfType(reportAction, CONST.REPORT.ACTIONS.TYPE.DYNAMIC_EXTERNAL_WORKFLOW_ROUTED);
             return type === CONST.CONTEXT_MENU_TYPES.REPORT_ACTION && !!reportAction && 'message' in reportAction && !isMessageDeleted(reportAction) && !isDynamicWorkflowRoutedAction;
         },
-        renderContent: (closePopover, {reportID, reportActions, reportAction, currentUserAccountID, close: closeManually, openContextMenu, setIsEmojiPickerActive}) => {
+        renderContent: (
+            closePopover,
+            {
+                reportID,
+                reportActions,
+                reportAction,
+                currentUserAccountID,
+                close: closeManually,
+                openContextMenu,
+                setIsEmojiPickerActive,
+                miniQuickReactionsFocusedIndex,
+                onMiniQuickReactionsItemFocus,
+                onMiniQuickReactionsItemBlur,
+            },
+        ) => {
             const isMini = !closePopover;
 
             const closeContextMenu = (onHideCallback?: () => void) => {
@@ -469,6 +492,9 @@ const ContextMenuActions: ContextMenuAction[] = [
                         }}
                         reportActionID={reportAction?.reportActionID}
                         reportAction={reportAction}
+                        focusedIndex={miniQuickReactionsFocusedIndex}
+                        onItemFocus={onMiniQuickReactionsItemFocus}
+                        onItemBlur={onMiniQuickReactionsItemBlur}
                     />
                 );
             }
