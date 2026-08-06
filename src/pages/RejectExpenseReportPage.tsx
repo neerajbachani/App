@@ -11,6 +11,7 @@ import Text from '@components/Text';
 import TextInput from '@components/TextInput';
 
 import useAutoFocusInput from '@hooks/useAutoFocusInput';
+import useAvailableInputHeight from '@hooks/useAvailableInputHeight';
 import useCurrentUserPersonalDetails from '@hooks/useCurrentUserPersonalDetails';
 import useLocalize from '@hooks/useLocalize';
 import useOnyx from '@hooks/useOnyx';
@@ -22,8 +23,6 @@ import type {PlatformStackScreenProps} from '@libs/Navigation/PlatformStackNavig
 import type {MoneyRequestNavigatorParamList} from '@libs/Navigation/types';
 import {getPersonalDetailByEmail, temporaryGetDisplayNameOrDefault} from '@libs/PersonalDetailsUtils';
 import {getSortedReportActions} from '@libs/ReportActionsUtils';
-
-import variables from '@styles/variables';
 
 import {rejectExpenseReport} from '@userActions/IOU/RejectMoneyRequest';
 
@@ -79,6 +78,7 @@ function RejectExpenseReportPage({route}: RejectExpenseReportPageProps) {
     const {translate} = useLocalize();
     const styles = useThemeStyles();
     const {inputCallbackRef} = useAutoFocusInput();
+    const {onLayout, maxAutoGrowHeight} = useAvailableInputHeight();
     const currentUserPersonalDetails = useCurrentUserPersonalDetails();
 
     const [report] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${getNonEmptyStringOnyxID(reportID)}`);
@@ -190,11 +190,15 @@ function RejectExpenseReportPage({route}: RejectExpenseReportPageProps) {
                 isSubmitActionDangerous
                 shouldRenderFooterAboveSubmit
                 footerContent={selectionError ? <FormHelpMessage message={selectionError} /> : undefined}
+                submitFlexEnabled={false}
             >
                 <View style={styles.mb3}>
                     <Text>{translate('iou.rejectReport.description')}</Text>
                 </View>
-                <View style={styles.mb6}>
+                <View
+                    style={[styles.flex1, hasPreviousApprover && styles.mb6]}
+                    onLayout={onLayout}
+                >
                     <InputWrapper
                         InputComponent={TextInput}
                         inputID={INPUT_IDS.COMMENT}
@@ -205,7 +209,7 @@ function RejectExpenseReportPage({route}: RejectExpenseReportPageProps) {
                         accessibilityLabel={translate('iou.rejectReport.rejectReason')}
                         ref={inputCallbackRef}
                         autoGrowHeight
-                        maxAutoGrowHeight={variables.textInputAutoGrowMaxHeight}
+                        maxAutoGrowHeight={maxAutoGrowHeight}
                     />
                 </View>
                 {hasPreviousApprover && (

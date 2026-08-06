@@ -7,6 +7,7 @@ import Text from '@components/Text';
 import TextInput from '@components/TextInput';
 
 import useAutoFocusInput from '@hooks/useAutoFocusInput';
+import useAvailableInputHeight from '@hooks/useAvailableInputHeight';
 import useLocalize from '@hooks/useLocalize';
 import useThemeStyles from '@hooks/useThemeStyles';
 
@@ -40,6 +41,7 @@ function HoldReasonFormView({backTo, validate, onSubmit, expenseCount = 1, isSub
     const styles = useThemeStyles();
     const {translate} = useLocalize();
     const {inputCallbackRef} = useAutoFocusInput();
+    const {onLayout, maxAutoGrowHeight} = useAvailableInputHeight();
 
     return (
         <ScreenWrapper
@@ -59,9 +61,13 @@ function HoldReasonFormView({backTo, validate, onSubmit, expenseCount = 1, isSub
                 validate={validate}
                 enabledWhenOffline
                 shouldHideFixErrorsAlert
+                submitFlexEnabled={false}
             >
                 <Text style={styles.mb6}>{translate(isSubmitter ? 'iou.explainHold' : 'iou.explainHoldApprover', {count: expenseCount})}</Text>
-                <View>
+                <View
+                    style={styles.flex1}
+                    onLayout={onLayout}
+                >
                     <InputWrapper
                         InputComponent={TextInput}
                         inputID={INPUT_IDS.COMMENT}
@@ -71,6 +77,8 @@ function HoldReasonFormView({backTo, validate, onSubmit, expenseCount = 1, isSub
                         label={translate('iou.reason')}
                         accessibilityLabel={translate('iou.reason')}
                         ref={inputCallbackRef}
+                        autoGrowHeight
+                        maxAutoGrowHeight={maxAutoGrowHeight}
                     />
                 </View>
             </FormProvider>
