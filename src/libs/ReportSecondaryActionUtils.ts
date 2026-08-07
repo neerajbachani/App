@@ -41,6 +41,7 @@ import {
     getOneTransactionThreadReportID,
     getOriginalMessage,
     getReportAction,
+    getSortedReportActions,
     hasPendingDEWApprove,
     hasPendingDEWSubmit,
     isPayAction,
@@ -412,27 +413,25 @@ function isCancelPaymentAction(
         return false;
     }
 
-    const isAdmin = policy?.role === CONST.POLICY.ROLE.ADMIN;
-    const isPayer = isPayerUtils(currentAccountID, currentUserEmail, report, bankAccountList, policy, false);
+    const canCancelPayment =
+        isPayerUtils(currentAccountID, currentUserEmail, report, bankAccountList, policy, false) ||
+        (policy?.reimbursementChoice === CONST.POLICY.REIMBURSEMENT_CHOICES.REIMBURSEMENT_MANUAL && canMemberWrite(policy, currentUserEmail, CONST.POLICY.POLICY_FEATURE.WORKFLOWS_PAYMENTS));
 
-    if (!isAdmin || !isPayer) {
+    if (!canCancelPayment) {
         return false;
     }
 
     // Get all report actions for this report and filter for pay actions
     // Pay actions are at the report level, not per transaction
-    const allReportActions = getAllReportActions(report.reportID);
-    const allActionsArray = Object.values(allReportActions);
-    const payActions = allActionsArray.filter((action): action is ReportAction => !!action && isPayAction(action));
+    const sortedReportActions = getSortedReportActions(Object.values(getAllReportActions(report.reportID)));
+    const latestPayActionIndex = sortedReportActions.findLastIndex(isPayAction);
+    const latestPayAction = latestPayActionIndex === -1 ? undefined : sortedReportActions.at(latestPayActionIndex);
+    const latestOriginalMessage = latestPayAction ? getOriginalMessage(latestPayAction) : undefined;
+    const latestPaymentType = latestOriginalMessage && 'paymentType' in latestOriginalMessage ? latestOriginalMessage.paymentType : undefined;
 
     // Check if payment was made via bank account (not elsewhere)
     // If no pay actions exist, we can't determine the payment type, so we assume it was NOT a bank payment
-    const isPaidViaBankAccount =
-        payActions.length > 0 &&
-        payActions.every((action) => {
-            const originalMessage = getOriginalMessage(action);
-            return originalMessage && 'paymentType' in originalMessage && originalMessage.paymentType !== CONST.IOU.PAYMENT_TYPE.ELSEWHERE;
-        });
+    const isPaidViaBankAccount = latestPaymentType !== undefined && latestPaymentType !== CONST.IOU.PAYMENT_TYPE.ELSEWHERE;
 
     // For reports marked as paid elsewhere or when we can't determine payment type, show cancel button
     if (report.stateNum === CONST.REPORT.STATE_NUM.APPROVED && report.statusNum === CONST.REPORT.STATUS_NUM.REIMBURSED && !isPaidViaBankAccount) {
@@ -449,13 +448,17 @@ function isCancelPaymentAction(
     const isBankProcessing = isPaidViaBankAccount && (isInBillingState || isApprovedAndReimbursed || isAutoReimbursed);
     const isPaymentProcessing = (!!report.isWaitingOnBankAccount && report.statusNum === CONST.REPORT.STATUS_NUM.APPROVED) || isBankProcessing;
 
-    const hasDailyNachaCutoffPassed = payActions.some((action) => {
+    const hasDailyNachaCutoffPassed = (() => {
+        if (!latestPayAction) {
+            return false;
+        }
+
         const now = new Date();
-        const paymentDatetime = new Date(action.created);
+        const paymentDatetime = new Date(latestPayAction.created);
         const nowUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds()));
         const cutoffTimeUTC = new Date(Date.UTC(paymentDatetime.getUTCFullYear(), paymentDatetime.getUTCMonth(), paymentDatetime.getUTCDate(), 23, 45, 0));
         return nowUTC.getTime() > cutoffTimeUTC.getTime();
-    });
+    })();
 
     return isPaymentProcessing && !hasDailyNachaCutoffPassed;
 }
