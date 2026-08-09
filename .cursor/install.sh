@@ -9,6 +9,9 @@ cd "$(dirname "$0")/.."
 # The exec daemon prepends its own Node (v22) to PATH, but this repo pins Node 26.5.0
 # via .nvmrc/engines with engine-strict, so nvm's Node must take precedence here.
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+fi
 # shellcheck disable=SC1091
 . "$NVM_DIR/nvm.sh"
 NODE_VERSION="$(cat .nvmrc)"
