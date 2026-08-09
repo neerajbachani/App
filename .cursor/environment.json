@@ -1,0 +1,23 @@
+{
+    "name": "New Expensify (web)",
+    "user": "ubuntu",
+    "install": "bash .cursor/install.sh",
+    "start": "bash .cursor/start.sh",
+    "terminals": [
+        {
+            "name": "web",
+            "command": "bash .cursor/web.sh",
+            "description": "New Expensify standalone web dev server (rsbuild) + API proxy, served at https://dev.new.expensify.com:8082/"
+        }
+    ],
+    "ports": [
+        {
+            "name": "web server",
+            "port": 8082
+        },
+        {
+            "name": "web proxy",
+            "port": 9000
+        }
+    ]
+}
