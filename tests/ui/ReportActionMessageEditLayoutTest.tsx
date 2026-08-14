@@ -146,6 +146,12 @@ const commentAction: ReportActionItemMessageEditProps['action'] = {
     actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
 };
 
+const otherCommentAction: ReportActionItemMessageEditProps['action'] = {
+    ...LHNTestUtils.getFakeReportAction(),
+    reportActionID: `${Number(commentAction.reportActionID) + 1}`,
+    actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+};
+
 const testIds = CONST.COMPOSER.TEST_ID;
 
 const rootChatReport = LHNTestUtils.getFakeReport();
@@ -206,6 +212,7 @@ async function seedReportAndActions() {
         await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT}${defaultReport.reportID}`, defaultReport);
         await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${defaultReport.reportID}`, {
             [commentAction.reportActionID]: commentAction,
+            [otherCommentAction.reportActionID]: otherCommentAction,
         });
     });
 }
@@ -580,6 +587,44 @@ describe('ReportActionMessageEdit layout and draft (narrow vs wide)', () => {
         expect(screen.getByTestId(testIds.DRAFT_MESSAGE_ACTION_ROW)).toBeOnTheScreen();
         expect(within(screen.getByTestId(testIds.REPORT_ACTION_COMPOSE)).getByTestId(CONST.COMPOSER.NATIVE_ID).props.value).toBe('');
         expect(await getReportActionDraftMessage(defaultReport.reportID, commentAction.reportActionID)).toBeUndefined();
+    });
+
+    it('does not let a saved edit overwrite the draft of a message that is opened for editing right after', async () => {
+        await seedReportAndActions();
+        await setReportActionDraftWithMessage('Original');
+        await waitForBatchedUpdatesWithAct();
+
+        renderNarrowMessageComposeWithSaveTrigger();
+        await waitForBatchedUpdatesWithAct();
+
+        const mainRoot = screen.getByTestId(testIds.REPORT_ACTION_COMPOSE);
+        fireEvent.changeText(within(mainRoot).getByTestId(CONST.COMPOSER.NATIVE_ID), 'Original, edited');
+        await settleWithoutRunningTimers();
+
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME / 2);
+        });
+        // Submitting an edit is deferred by a tick to let native autocorrection land, so let that run.
+        fireEvent.press(screen.getByTestId(saveEditTriggerTestID));
+        await act(async () => {
+            jest.advanceTimersByTime(1);
+        });
+
+        // Edit another message while the save that was armed by the previous edit is still pending. Because
+        // saveReportActionDraft replaces the whole collection, a stale write would restore the old edit instead.
+        await act(async () => {
+            await Onyx.merge(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS_DRAFTS}${defaultReport.reportID}`, {
+                [otherCommentAction.reportActionID]: {message: 'Another message'},
+            });
+        });
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME + 1);
+        });
+        await waitForBatchedUpdatesWithAct();
+
+        expect(await getReportActionDraftMessage(defaultReport.reportID, otherCommentAction.reportActionID)).toBe('Another message');
+        expect(await getReportActionDraftMessage(defaultReport.reportID, commentAction.reportActionID)).toBeUndefined();
+        expect(within(screen.getByTestId(testIds.REPORT_ACTION_COMPOSE)).getByTestId(CONST.COMPOSER.NATIVE_ID).props.value).toBe('Another message');
     });
 
     it('still persists the edit draft while editing continues in the narrow main composer', async () => {
