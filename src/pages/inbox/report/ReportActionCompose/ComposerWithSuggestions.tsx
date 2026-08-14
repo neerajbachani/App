@@ -108,6 +108,9 @@ type ComposerWithSuggestionsRef = ComposerRef & {
 
     /** Reset the height of the composer */
     resetHeight: () => void;
+
+    /** Drop the edit draft save that typing has scheduled but not written yet */
+    cancelPendingReportActionDraftSave: () => void;
 };
 
 type ComposerWithSuggestionsProps = Partial<ChildrenProps> &
@@ -286,7 +289,11 @@ function ComposerWithSuggestions({
     });
 
     // Save the draft of the report action. This debounced so that we're not ceaselessly saving your edit.
-    const {saveDraft: debouncedSaveReportActionDraft, isSavePending: isDraftSavePending} = useDebouncedSaveDraft(saveReportActionDraft);
+    const {
+        saveDraft: debouncedSaveReportActionDraft,
+        isSavePending: isDraftSavePending,
+        cancelPendingSave: cancelPendingReportActionDraftSave,
+    } = useDebouncedSaveDraft(saveReportActionDraft);
 
     // Save the draft of the report comment. This debounced so that we're not ceaselessly saving your edit. Saving the draft
     // allows one to navigate somewhere else and come back to the comment and still have it in edit mode.
@@ -960,6 +967,9 @@ function ComposerWithSuggestions({
                         }
                         if (prop === 'resetHeight') {
                             return resetHeight;
+                        }
+                        if (prop === 'cancelPendingReportActionDraftSave') {
+                            return cancelPendingReportActionDraftSave;
                         }
 
                         return composerRef.current?.[prop as keyof ComposerRef];

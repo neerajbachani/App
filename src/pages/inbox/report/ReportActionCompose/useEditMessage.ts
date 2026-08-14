@@ -31,12 +31,22 @@ type UseEditMessageProps = {
     debouncedCommentMaxLengthValidation: DebouncedFuncLeading<(value: string) => boolean>;
     /** The ref to the composer */
     composerRef: React.RefObject<ComposerRef | null>;
+    /** Drops the edit draft save that the editor has scheduled but not written yet */
+    cancelPendingDraftSave: () => void;
 };
 
 /**
  * Delete the draft of the comment being edited. This will take the comment out of "edit mode" with the old content.
  */
-function useEditMessage({reportID, originalReportID, reportAction, shouldScrollToLastMessage = false, debouncedCommentMaxLengthValidation, composerRef}: UseEditMessageProps) {
+function useEditMessage({
+    reportID,
+    originalReportID,
+    reportAction,
+    shouldScrollToLastMessage = false,
+    debouncedCommentMaxLengthValidation,
+    composerRef,
+    cancelPendingDraftSave,
+}: UseEditMessageProps) {
     const reportScrollManager = useReportScrollManager();
 
     const {email} = useCurrentUserPersonalDetails();
@@ -51,6 +61,11 @@ function useEditMessage({reportID, originalReportID, reportAction, shouldScrollT
         if (!reportAction) {
             return;
         }
+
+        // A draft save scheduled while typing outlives this teardown on narrow layout, where editing happens in the
+        // main composer and that composer never unmounts. Drop it here or it lands after the clear below, recreating
+        // the draft that edit mode is derived from and reopening the editor with the message that was just saved.
+        cancelPendingDraftSave();
 
         stopEditing();
 

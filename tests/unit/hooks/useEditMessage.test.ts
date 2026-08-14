@@ -106,6 +106,7 @@ describe('useEditMessage', () => {
             reportAction,
             debouncedCommentMaxLengthValidation: makeDebouncedValidator({flushResult: true}),
             composerRef: {current: {blur: jest.fn()} as never},
+            cancelPendingDraftSave: jest.fn(),
             ...overrides,
         };
         const hook = renderHook(() => useEditMessage(props));
@@ -123,6 +124,18 @@ describe('useEditMessage', () => {
 
         expect(mockEditReportComment).toHaveBeenCalledTimes(0);
         expect(mockShowDeleteModal).toHaveBeenCalledTimes(0);
+    });
+
+    it('should drop the editor pending draft save before clearing the drafts', async () => {
+        const cancelPendingDraftSave = jest.fn();
+        const {hook} = renderUseEditMessage({cancelPendingDraftSave});
+
+        act(() => {
+            hook.result.current.publishDraft('Hello');
+        });
+
+        expect(mockEditReportComment).toHaveBeenCalledTimes(1);
+        expect(cancelPendingDraftSave).toHaveBeenCalledTimes(1);
     });
 
     it('should open delete modal when publishing an empty (trimmed) message', async () => {

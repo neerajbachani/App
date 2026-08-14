@@ -107,6 +107,7 @@ function ComposerProvider({children, reportID}: ComposerProviderProps) {
         shouldScrollToLastMessage: false,
         debouncedCommentMaxLengthValidation,
         composerRef,
+        cancelPendingDraftSave: () => composerRef.current?.cancelPendingReportActionDraftSave(),
     });
 
     const isDraftCommentEmpty = !text || !!text.match(CONST.REGEX.EMPTY_COMMENT);

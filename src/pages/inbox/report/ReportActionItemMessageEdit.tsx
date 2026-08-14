@@ -155,7 +155,7 @@ function ReportActionItemMessageEdit({action, reportID, originalReportID, policy
 
     // Save the draft of the comment. This debounced so that we're not ceaselessly saving your edit. Saving the draft
     // allows one to navigate somewhere else and come back to the comment and still have it in edit mode.
-    const {saveDraft, isSavePending: isDraftSavePending} = useDebouncedSaveDraft(saveReportActionDraft);
+    const {saveDraft, isSavePending: isDraftSavePending, cancelPendingSave} = useDebouncedSaveDraft(saveReportActionDraft);
 
     useDraftMessageVideoAttributeCache({
         draftMessage: editingMessage ?? '',
@@ -263,6 +263,7 @@ function ReportActionItemMessageEdit({action, reportID, originalReportID, policy
         shouldScrollToLastMessage: index === 0,
         debouncedCommentMaxLengthValidation,
         composerRef,
+        cancelPendingDraftSave: cancelPendingSave,
     });
 
     /**

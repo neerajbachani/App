@@ -3,12 +3,17 @@ import {act, fireEvent, render, screen, waitFor, within} from '@testing-library/
 import ComposeProviders from '@components/ComposeProviders';
 import {LocaleContextProvider} from '@components/LocaleContextProvider';
 import OnyxListItemProvider from '@components/OnyxListItemProvider';
+import Text from '@components/Text';
 import {KeyboardStateProvider} from '@components/withKeyboardState';
 
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 
+import ComposerDefaultFooter from '@pages/inbox/report/ReportActionCompose/ComposerDefaultFooter';
+import ComposerInputArea from '@pages/inbox/report/ReportActionCompose/ComposerInputArea';
+import ComposerProvider from '@pages/inbox/report/ReportActionCompose/ComposerProvider';
 import type {ReportActionComposeProps} from '@pages/inbox/report/ReportActionCompose/ReportActionCompose';
 import ReportActionCompose from '@pages/inbox/report/ReportActionCompose/ReportActionCompose';
+import useComposerSubmit from '@pages/inbox/report/ReportActionCompose/useComposerSubmit';
 import {ReportActionEditMessageContextProvider} from '@pages/inbox/report/ReportActionEditMessageContext';
 import type {ReportActionItemMessageEditProps} from '@pages/inbox/report/ReportActionItemMessageEdit';
 import ReportActionItemMessageEdit from '@pages/inbox/report/ReportActionItemMessageEdit';
@@ -228,6 +233,45 @@ function renderNarrowMessageCompose() {
             <ReportActionCompose {...defaultProps} />
         </ReportScreenProviders>,
     );
+}
+
+const saveEditTriggerTestID = 'saveEditTrigger';
+
+/**
+ * The real send button submits through a gesture handler, which cannot be driven from tests. This stands in for it and
+ * calls the exact same entry point (see ComposerSendButton).
+ */
+function SaveEditTrigger({reportID}: {reportID: string}) {
+    const {submitDraftAndClearComposer} = useComposerSubmit(reportID);
+    return (
+        <Text
+            testID={saveEditTriggerTestID}
+            onPress={submitDraftAndClearComposer}
+        >
+            save
+        </Text>
+    );
+}
+
+function renderNarrowMessageComposeWithSaveTrigger() {
+    mockUseResponsiveLayout.mockReturnValue(narrowLayout);
+    return render(
+        <ReportScreenProviders>
+            <ComposerProvider reportID={defaultReport.reportID}>
+                <ComposerInputArea>
+                    <ComposerDefaultFooter />
+                </ComposerInputArea>
+                <SaveEditTrigger reportID={defaultReport.reportID} />
+            </ComposerProvider>
+        </ReportScreenProviders>,
+    );
+}
+
+/** Lets React and Onyx settle without running timers, so a pending debounced save stays pending. */
+async function settleWithoutRunningTimers() {
+    await act(async () => {
+        await Promise.resolve();
+    });
 }
 
 async function seedNestedThreadHierarchyWithAncestorEditDraft(draftMessage: string) {
@@ -508,6 +552,79 @@ describe('ReportActionMessageEdit layout and draft (narrow vs wide)', () => {
         // to the parent's own report, not to that report's parentReportID.
         expect(await getReportActionDraftMessage(rootChatReport.reportID, rootChatMessageAction.reportActionID)).toBe('Parent body, edited');
         expect(await getReportActionDraftMessage(threadReport.reportID, rootChatMessageAction.reportActionID)).toBeUndefined();
+    });
+
+    it('does not reopen message edit mode when the edit is saved before the debounced draft save has fired', async () => {
+        await seedReportAndActions();
+        await setReportActionDraftWithMessage('Original');
+        await waitForBatchedUpdatesWithAct();
+
+        renderNarrowMessageComposeWithSaveTrigger();
+        await waitForBatchedUpdatesWithAct();
+
+        const mainRoot = screen.getByTestId(testIds.REPORT_ACTION_COMPOSE);
+        fireEvent.changeText(within(mainRoot).getByTestId(CONST.COMPOSER.NATIVE_ID), 'Original, edited');
+        await settleWithoutRunningTimers();
+
+        // Save while the draft save armed by the last keystroke is still pending.
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME / 2);
+        });
+        fireEvent.press(screen.getByTestId(saveEditTriggerTestID));
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME + 1);
+        });
+        await waitForBatchedUpdatesWithAct();
+
+        expect(screen.queryByTestId(testIds.EDITING_MESSAGE_ACTION_ROW)).toBeNull();
+        expect(screen.getByTestId(testIds.DRAFT_MESSAGE_ACTION_ROW)).toBeOnTheScreen();
+        expect(within(screen.getByTestId(testIds.REPORT_ACTION_COMPOSE)).getByTestId(CONST.COMPOSER.NATIVE_ID).props.value).toBe('');
+        expect(await getReportActionDraftMessage(defaultReport.reportID, commentAction.reportActionID)).toBeUndefined();
+    });
+
+    it('still persists the edit draft while editing continues in the narrow main composer', async () => {
+        await seedReportAndActions();
+        await setReportActionDraftWithMessage('Original');
+        await waitForBatchedUpdatesWithAct();
+
+        renderNarrowMessageComposeWithSaveTrigger();
+        await waitForBatchedUpdatesWithAct();
+
+        const mainRoot = screen.getByTestId(testIds.REPORT_ACTION_COMPOSE);
+        fireEvent.changeText(within(mainRoot).getByTestId(CONST.COMPOSER.NATIVE_ID), 'Original, edited');
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME + 1);
+        });
+        await waitForBatchedUpdatesWithAct();
+
+        expect(await getReportActionDraftMessage(defaultReport.reportID, commentAction.reportActionID)).toBe('Original, edited');
+        expect(screen.getByTestId(testIds.EDITING_MESSAGE_ACTION_ROW)).toBeOnTheScreen();
+    });
+
+    it('does not bring the discarded text back when the edit is cancelled before the debounced draft save has fired', async () => {
+        await seedReportAndActions();
+        await setReportActionDraftWithMessage('Cancel me');
+        await waitForBatchedUpdatesWithAct();
+
+        renderNarrowMessageCompose();
+        await waitForBatchedUpdatesWithAct();
+
+        const mainRoot = screen.getByTestId(testIds.REPORT_ACTION_COMPOSE);
+        fireEvent.changeText(within(mainRoot).getByTestId(CONST.COMPOSER.NATIVE_ID), 'Cancel me, edited');
+        await settleWithoutRunningTimers();
+
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME / 2);
+        });
+        fireEvent.press(screen.getByTestId(testIds.MESSAGE_EDIT_CANCEL_MAIN_COMPOSER));
+        await act(async () => {
+            jest.advanceTimersByTime(CONST.TIMING.DRAFT_SAVE_DEBOUNCE_TIME + 1);
+        });
+        await waitForBatchedUpdatesWithAct();
+
+        expect(screen.queryByTestId(testIds.EDITING_MESSAGE_ACTION_ROW)).toBeNull();
+        expect(screen.getByTestId(testIds.DRAFT_MESSAGE_ACTION_ROW)).toBeOnTheScreen();
+        expect(await getReportActionDraftMessage(defaultReport.reportID, commentAction.reportActionID)).toBeUndefined();
     });
 
     it('cancel in narrow main composer returns to normal draft action row', async () => {
