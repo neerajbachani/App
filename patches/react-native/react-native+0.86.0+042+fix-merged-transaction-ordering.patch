@@ -1,0 +1,114 @@
+diff --git a/node_modules/react-native/ReactAndroid/src/main/jni/react/fabric/FabricUIManagerBinding.cpp b/node_modules/react-native/ReactAndroid/src/main/jni/react/fabric/FabricUIManagerBinding.cpp
+index 73dfb70..e2869e8 100644
+--- a/node_modules/react-native/ReactAndroid/src/main/jni/react/fabric/FabricUIManagerBinding.cpp
++++ b/node_modules/react-native/ReactAndroid/src/main/jni/react/fabric/FabricUIManagerBinding.cpp
+@@ -31,6 +31,7 @@
+ #include <react/renderer/scheduler/SchedulerToolbox.h>
+ #include <react/renderer/uimanager/primitives.h>
+ #include <react/utils/ContextContainer.h>
++#include <optional>
+ #include <string_view>
+ 
+ namespace facebook::react {
+@@ -635,15 +636,18 @@ void FabricUIManagerBinding::schedulerDidFinishTransaction(
+     }
+ 
+     std::unique_lock<std::mutex> lock(pendingTransactionsMutex_);
++    // Only the latest pending transaction for a surface is a valid merge
++    // target; merging into an older one would run commits out of order.
+     auto pendingTransaction = std::find_if(
+-        pendingTransactions_.begin(),
+-        pendingTransactions_.end(),
++        pendingTransactions_.rbegin(),
++        pendingTransactions_.rend(),
+         [&](const auto& transaction) {
+           return transaction.getSurfaceId() ==
+               mountingTransaction->getSurfaceId();
+         });
+ 
+-    if (pendingTransaction != pendingTransactions_.end() && pendingTransaction->canMergeWith(*mountingTransaction)) {
++    if (pendingTransaction != pendingTransactions_.rend() &&
++        pendingTransaction->canMergeWith(*mountingTransaction)) {
+       pendingTransaction->mergeWith(std::move(*mountingTransaction));
+     } else {
+       pendingTransactions_.push_back(std::move(*mountingTransaction));
+@@ -679,24 +683,20 @@ void FabricUIManagerBinding::schedulerShouldRenderTransactions(
+       mountingManager->executeMount(transaction);
+     }
+   } else {
+-    std::vector<MountingTransaction> pendingTransactions;
+-
+-    {
+-      // Retain the lock to access the pending transactions but not to execute
+-      // the mount operations because that method can call into this method
+-      // again.
+-      //
+-      // This can be re-entrant when mounting manager triggers state updates
+-      // synchronously (this can happen when committing from the UI thread).
+-      // This is safe because we're already combining all the transactions for
+-      // the same surface ID in a single transaction in the pending transactions
+-      // list, so operations won't run out of order.
+-      std::unique_lock<std::mutex> lock(pendingTransactionsMutex_);
+-      pendingTransactions_.swap(pendingTransactions);
+-    }
+-
+-    for (auto& transaction : pendingTransactions) {
+-      mountingManager->executeMount(transaction);
++    // Drain pending transactions one at a time so a re-entrant render pump
++    // (triggered by synchronous UI-thread commits inside executeMount) cannot
++    // execute a newly queued transaction before the rest of the queue.
++    while (true) {
++      std::optional<MountingTransaction> transaction;
++      {
++        std::unique_lock<std::mutex> lock(pendingTransactionsMutex_);
++        if (pendingTransactions_.empty()) {
++          break;
++        }
++        transaction = std::move(pendingTransactions_.front());
++        pendingTransactions_.erase(pendingTransactions_.begin());
++      }
++      mountingManager->executeMount(*transaction);
+     }
+   }
+ }
+diff --git a/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.cpp b/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.cpp
+index d95d779..bd8d6d8 100644
+--- a/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.cpp
++++ b/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.cpp
+@@ -65,7 +65,18 @@ bool MountingTransaction::canMergeWith(MountingTransaction& transaction) {
+     }
+ 
+     for (const auto& mutation : transaction.getMutations()) {
+-        if (mutation.type == ShadowViewMutation::Type::Create && deletedTags.contains(mutation.newChildShadowView.tag)) {
++        // Delete mount items are deferred to the end of the batch, so any
++        // mutation that re-attaches or re-parents a tag this transaction
++        // deletes would execute against a view the deferred Delete is about
++        // to drop. Create and Insert both do that; so does using the tag as
++        // an insertion/removal parent.
++        if ((mutation.type == ShadowViewMutation::Type::Create ||
++             mutation.type == ShadowViewMutation::Type::Insert) &&
++            deletedTags.contains(mutation.newChildShadowView.tag)) {
++            return false;
++        }
++        if (mutation.parentTag != -1 &&
++            deletedTags.contains(mutation.parentTag)) {
+             return false;
+         }
+     }
+diff --git a/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.h b/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.h
+index 4e91679..c9ee347 100644
+--- a/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.h
++++ b/node_modules/react-native/ReactCommon/react/renderer/mounting/MountingTransaction.h
+@@ -85,9 +85,9 @@ class MountingTransaction final {
+ 
+   /*
+    * Checks whether the two transactions can be safely merged. Due to
+-   * reordering of mutations during mount, the sequence of
+-   * REMOVE -> DELETE | CREATE -> INSERT (2 transactions) may get changed to
+-   * INSERT -> REMOVE -> DELETE and the state will diverge from there.
++   * reordering of mutations during mount, Delete mutations are deferred to the
++   * end of the batch. Merging is unsafe when the incoming transaction would
++   * Create, Insert, or re-parent through a tag the pending transaction Delete's.
+    */
+   bool canMergeWith(MountingTransaction &transaction);
+ 
