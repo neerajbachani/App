@@ -32,7 +32,7 @@ const PARAMETERS_WHITELIST: ReadonlyArray<string | RegExp> = [
 /**
  * Only log lines whose message contains one of these prefixes are forwarded to Sentry.
  */
-const FORWARDED_LOG_PREFIXES = ['[MFA]', '[OnyxUpdateManagerError]', '[Receipt]', '[PDFStall]', '[OpenReportStall]', '[withNavigationFallback]'] as const;
+const FORWARDED_LOG_PREFIXES = ['[MFA]', '[OnyxUpdateManagerError]', '[Receipt]', '[Attachment]', '[PDFStall]', '[OpenReportStall]', '[withNavigationFallback]'] as const;
 
 type ForwardedLogPrefix = TupleToUnion<typeof FORWARDED_LOG_PREFIXES>;
 
@@ -43,6 +43,7 @@ type ForwardedLogPrefix = TupleToUnion<typeof FORWARDED_LOG_PREFIXES>;
  */
 const PREFIX_SCOPED_PARAMETERS_WHITELIST = new Map<ForwardedLogPrefix, ReadonlyArray<string | RegExp>>([
     ['[Receipt]', ['receiptTraceId', 'transactionID', 'event', 'captureSource', 'code']],
+    ['[Attachment]', ['attachmentID', 'reportID', 'event', 'reason', 'branch', 'stage', 'outcome', 'triedResolved', 'hasExtension', 'wasResolved', 'sourceExists', 'destDirExists', 'code']],
     ['[PDFStall]', ['reportID']],
     ['[OpenReportStall]', ['reportID']],
     ['[withNavigationFallback]', ['method', 'stack']],

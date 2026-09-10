@@ -88,4 +88,38 @@ describe('forwardLogsToSentry', () => {
         // Then nothing is mirrored to Sentry
         expect(Sentry.addBreadcrumb).not.toHaveBeenCalled();
     });
+
+    it('adds a breadcrumb for [Attachment] dropped with whitelisted correlation ids only', () => {
+        const packet = packetWith('[alrt] [Attachment] dropped', {
+            event: 'dropped',
+            attachmentID: 'attach-99',
+            reportID: 'report-99',
+            command: 'AddAttachment',
+            reason: 'missing',
+            triedResolved: true,
+            source: 'file://secret.jpg',
+            fileName: 'secret.jpg',
+        });
+
+        forwardLogsToSentry(packet);
+
+        expect(Sentry.addBreadcrumb).toHaveBeenCalledWith(
+            expect.objectContaining({
+                category: 'attachment',
+                message: '[alrt] [Attachment] dropped',
+                data: expect.objectContaining({
+                    event: 'dropped',
+                    attachmentID: 'attach-99',
+                    reportID: 'report-99',
+                    command: 'AddAttachment',
+                    reason: 'missing',
+                    triedResolved: true,
+                }),
+            }),
+        );
+
+        const breadcrumb = jest.mocked(Sentry.addBreadcrumb).mock.calls.at(0)?.[0];
+        expect(breadcrumb?.data).not.toHaveProperty('source');
+        expect(breadcrumb?.data).not.toHaveProperty('fileName');
+    });
 });

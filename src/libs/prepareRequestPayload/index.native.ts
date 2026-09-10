@@ -1,12 +1,36 @@
 import checkFileExists from '@libs/fileDownload/checkFileExists';
 import {readFileAsync} from '@libs/fileDownload/FileUtils';
 import ReceiptStorage from '@libs/ReceiptStorage';
+import {logAttachmentDropped} from '@libs/telemetry/AttachmentObservability';
 import {logReceiptDropped} from '@libs/telemetry/ReceiptObservability';
 import validateFormDataParameter from '@libs/validateFormDataParameter';
 
 import type {Receipt} from '@src/types/onyx/Transaction';
 
 import type PrepareRequestPayload from './types';
+
+/**
+ * Prefer the stored source when it still exists, otherwise fall back to the re-rooted receipts path.
+ * Mirrors the receipt branch so offline replay survives an iOS container move between enqueue and send.
+ */
+function pickReadableAttachmentSource(source: string): Promise<{readUri: string; triedResolved: boolean}> {
+    const resolvedSource = ReceiptStorage.resolve(source) ?? source;
+
+    return checkFileExists(source).then((originalExists) => {
+        if (originalExists) {
+            return {readUri: source, triedResolved: false};
+        }
+
+        if (resolvedSource !== source) {
+            return checkFileExists(resolvedSource).then((resolvedExists) => ({
+                readUri: resolvedExists ? resolvedSource : source,
+                triedResolved: true,
+            }));
+        }
+
+        return {readUri: source, triedResolved: false};
+    });
+}
 
 /**
  * Prepares the request payload (body) for a given command and data.
@@ -60,15 +84,44 @@ const prepareRequestPayload: PrepareRequestPayload = (command, data, initiatedOf
 
                     return Promise.resolve();
                 }
-                // Use the actual file name if available, otherwise fall back to extracting from path/uri
-                const fileName = name || (path ? (path.split('/').pop() ?? '') : '') || '';
-                return readFileAsync(source, fileName, () => {}, undefined, type).then((file) => {
-                    if (!file) {
-                        return;
-                    }
 
-                    validateFormDataParameter(command, key, file);
-                    formData.append(key, file);
+                const fileName = name || (path ? (path.split('/').pop() ?? '') : '') || '';
+                const reportID = typeof data.reportID === 'string' ? data.reportID : undefined;
+                const attachmentID = typeof data.attachmentID === 'string' ? data.attachmentID : undefined;
+
+                return pickReadableAttachmentSource(source).then(({readUri, triedResolved}) => {
+                    let dropLogged = false;
+                    const logDropOnce = (reason: 'missing' | 'readFailed') => {
+                        if (dropLogged) {
+                            return;
+                        }
+                        dropLogged = true;
+                        logAttachmentDropped({
+                            attachmentID,
+                            command,
+                            reportID,
+                            reason,
+                            triedResolved,
+                            source,
+                            fileName,
+                        });
+                    };
+
+                    return readFileAsync(
+                        readUri,
+                        fileName,
+                        () => {},
+                        () => logDropOnce('readFailed'),
+                        type,
+                    ).then((file) => {
+                        if (!file) {
+                            logDropOnce('missing');
+                            return;
+                        }
+
+                        validateFormDataParameter(command, key, file);
+                        formData.append(key, file);
+                    });
                 });
             }
 

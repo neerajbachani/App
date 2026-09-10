@@ -6,8 +6,9 @@ jest.mock('@libs/fileDownload/checkFileExists', () => ({
     default: mockCheckFileExists,
 }));
 
+const mockReadFileAsync = jest.fn<Promise<File | undefined>, [string, string, () => void, (error?: unknown) => void, string | undefined]>(() => Promise.resolve(undefined));
 jest.mock('@libs/fileDownload/FileUtils', () => ({
-    readFileAsync: jest.fn(() => Promise.resolve(null)),
+    readFileAsync: (...args: Parameters<typeof mockReadFileAsync>) => mockReadFileAsync(...args),
 }));
 
 const mockValidateFormDataParameter = jest.fn();
@@ -19,6 +20,11 @@ jest.mock('@libs/validateFormDataParameter', () => ({
 const mockLogReceiptDropped = jest.fn();
 jest.mock('@libs/telemetry/ReceiptObservability', () => ({
     logReceiptDropped: mockLogReceiptDropped,
+}));
+
+const mockLogAttachmentDropped = jest.fn();
+jest.mock('@libs/telemetry/AttachmentObservability', () => ({
+    logAttachmentDropped: mockLogAttachmentDropped,
 }));
 
 const RECEIPTS_FOLDER = '/Containers/Data/Application/CURRENT/Documents/Receipts-Upload';
@@ -142,5 +148,93 @@ describe('prepareRequestPayload (native)', () => {
 
         expect(formData.get('amount')).toBe('100');
         expect(formData.has('undefinedField')).toBe(false);
+    });
+
+    it('should append an offline chat attachment when the stored source names a stale container but the file exists under the current receipts folder', async () => {
+        const staleSource = 'file:///Containers/Data/Application/STALE/Documents/Receipts-Upload/photo_1.jpg';
+        const resolvedSource = `file://${RECEIPTS_FOLDER}/photo_1.jpg`;
+        const fileObject = Object.assign(new File(['image-bytes'], 'photo.jpg', {type: 'image/jpeg'}), {
+            uri: resolvedSource,
+            source: staleSource,
+        });
+
+        mockCheckFileExists.mockImplementation((path) => Promise.resolve(path === resolvedSource));
+        mockReadFileAsync.mockImplementation((path) => {
+            if (path === resolvedSource) {
+                return Promise.resolve(fileObject);
+            }
+            return Promise.resolve(undefined);
+        });
+
+        const formData = await prepareRequestPayload(
+            'AddAttachment',
+            {
+                file: fileObject,
+                reportID: 'report-1',
+                attachmentID: 'attach-1',
+                reportComment: '',
+            },
+            true,
+        );
+
+        expect(formData.has('file')).toBe(true);
+        expect(mockReadFileAsync).toHaveBeenCalledWith(resolvedSource, 'photo.jpg', expect.any(Function), expect.any(Function), 'image/jpeg');
+        expect(mockLogAttachmentDropped).not.toHaveBeenCalled();
+    });
+
+    it('should read the stored source as-is when it still exists and not consult the resolver fallback', async () => {
+        const source = `file://${RECEIPTS_FOLDER}/photo_2.jpg`;
+        const fileObject = Object.assign(new File(['image-bytes'], 'photo.jpg', {type: 'image/jpeg'}), {
+            uri: source,
+            source,
+        });
+
+        mockCheckFileExists.mockResolvedValue(true);
+        mockReadFileAsync.mockResolvedValue(fileObject);
+
+        const formData = await prepareRequestPayload('AddAttachment', {file: fileObject}, true);
+
+        expect(formData.has('file')).toBe(true);
+        expect(mockReadFileAsync).toHaveBeenCalledWith(source, 'photo.jpg', expect.any(Function), expect.any(Function), 'image/jpeg');
+        expect(mockLogAttachmentDropped).not.toHaveBeenCalled();
+    });
+
+    it('should emit exactly one [Attachment] dropped alert and omit the file when offline replay cannot read it', async () => {
+        const source = `file://${RECEIPTS_FOLDER}/gone.jpg`;
+        const fileObject = Object.assign(new File([''], 'photo.jpg', {type: 'image/jpeg'}), {
+            uri: source,
+            source,
+        });
+
+        mockCheckFileExists.mockResolvedValue(false);
+        mockReadFileAsync.mockImplementation((_path, _name, _onSuccess, onFailure) => {
+            onFailure(new Error('ENOENT'));
+            return Promise.resolve(undefined);
+        });
+
+        const formData = await prepareRequestPayload(
+            'AddTextAndAttachment',
+            {
+                file: fileObject,
+                reportID: 'report-2',
+                attachmentID: 'attach-2',
+                reportComment: 'hello',
+            },
+            true,
+        );
+
+        expect(formData.has('file')).toBe(false);
+        expect(formData.get('reportComment')).toBe('hello');
+        expect(mockLogAttachmentDropped).toHaveBeenCalledTimes(1);
+        expect(mockLogAttachmentDropped).toHaveBeenCalledWith({
+            attachmentID: 'attach-2',
+            command: 'AddTextAndAttachment',
+            reportID: 'report-2',
+            reason: 'readFailed',
+            triedResolved: false,
+            source,
+            fileName: 'photo.jpg',
+        });
+        expect(mockLogReceiptDropped).not.toHaveBeenCalled();
     });
 });
