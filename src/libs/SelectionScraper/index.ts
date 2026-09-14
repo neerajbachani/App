@@ -120,6 +120,11 @@ const replaceNodes = (dom: ChildNode, isChildOfEditorElement: boolean): ChildNod
         }
     } else if (dom instanceof Element) {
         domName = dom.name;
+        // A pressable row can render as a <button> on web. Keep it block-level so the HTML flavor matches what Safari
+        // already ships and `htmlToMarkdown` still emits a break between messages.
+        if (domName === 'button') {
+            domName = 'div';
+        }
         const child = dom.children.at(0);
         if (dom.attribs?.[tagAttribute]) {
             // If it's a markdown element, rename it according to the value of data-testid, so ExpensiMark can parse it

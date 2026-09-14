@@ -44,6 +44,7 @@ function GenericPressable({
     fullDisabled = false,
     interactive = true,
     isNested = false,
+    shouldAllowTextSelection = false,
     ref,
     dataSet,
     forwardedFSClass,
@@ -58,6 +59,8 @@ function GenericPressable({
     const [hitSlop, onLayout] = Accessibility.useAutoHitSlop();
     const [isHovered, setIsHovered] = useState(false);
     const isRoleButton = [rest.accessibilityRole, rest.role].includes(CONST.ROLE.BUTTON);
+    // A button role normally means "not selectable, exclude from copy". Callers whose content is selectable text opt out.
+    const shouldSuppressSelection = isRoleButton && !shouldAllowTextSelection;
     const internalRef = useRef<View | null>(null);
     const composedRef = useMemo(() => mergeRefs(ref, internalRef), [ref]);
     const routeKey = useRouteKey();
@@ -206,7 +209,7 @@ function GenericPressable({
             onKeyDown={!isDisabled ? handleKeyDown : undefined}
             onPressIn={!isDisabled ? onPressIn : undefined}
             onPressOut={!isDisabled ? onPressOut : undefined}
-            dataSet={{...(isRoleButton ? {[CONST.SELECTION_SCRAPER_HIDDEN_ELEMENT]: true} : {}), ...(dataSet ?? {})}}
+            dataSet={{...(shouldSuppressSelection ? {[CONST.SELECTION_SCRAPER_HIDDEN_ELEMENT]: true} : {}), ...(dataSet ?? {})}}
             style={(state) => [
                 cursorStyle,
                 StyleUtils.parseStyleFromFunction(style, state),
@@ -215,7 +218,7 @@ function GenericPressable({
                 (state.hovered || isHovered) && StyleUtils.parseStyleFromFunction(hoverStyle, state),
                 state.pressed && StyleUtils.parseStyleFromFunction(pressStyle, state),
                 isDisabled && [StyleUtils.parseStyleFromFunction(disabledStyle, state), styles.noSelect],
-                isRoleButton && styles.userSelectNone,
+                shouldSuppressSelection && styles.userSelectNone,
             ]}
             // accessibility props
             accessibilityState={{
