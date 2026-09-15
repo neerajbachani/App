@@ -26,12 +26,12 @@ import ONYXKEYS from '@src/ONYXKEYS';
 import ROUTES from '@src/ROUTES';
 import SCREENS from '@src/SCREENS';
 
-import {PortalProvider} from '@gorhom/portal';
 import {NavigationContainer} from '@react-navigation/native';
 import React from 'react';
 import Onyx from 'react-native-onyx';
 
 import createMock from '../utils/createMock';
+import OnboardingStickyCaretTestWrapper from '../utils/OnboardingStickyCaretTestWrapper';
 import * as TestHelper from '../utils/TestHelper';
 import waitForBatchedUpdatesWithAct from '../utils/waitForBatchedUpdatesWithAct';
 
@@ -82,7 +82,7 @@ const renderOnboardingPersonalDetailsPage = (
 ) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, CurrentUserPersonalDetailsProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -92,7 +92,7 @@ const renderOnboardingPersonalDetailsPage = (
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
     );
 };

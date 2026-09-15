@@ -1,10 +1,10 @@
 import Button from '@components/Button';
 import ButtonDisabledWhenOffline from '@components/Button/composed/ButtonDisabledWhenOffline';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import CollapsibleHeaderOnKeyboard from '@components/CollapsibleHeaderOnKeyboard';
 import FixedFooter from '@components/FixedFooter';
 import FormHelpMessage from '@components/FormHelpMessage';
 import Icon from '@components/Icon';
-import OnboardingHeader from '@components/OnboardingHeader';
 import {PressableWithoutFeedback} from '@components/Pressable';
 import RadioButtonWithLabel from '@components/RadioButtonWithLabel';
 import ScreenWrapper from '@components/ScreenWrapper';
@@ -26,6 +26,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import {setOnboardingAccountingEnabled, setOnboardingAdminsChatReportID, setOnboardingPolicyID, setOnboardingUserReportedIntegration} from '@libs/actions/Welcome';
 import {getDefaultOnboardingFeaturesMap} from '@libs/actions/Welcome/OnboardingFeatures';
 import {isMobileSafari} from '@libs/Browser';
+import {ONBOARDING_HEADER_STRIP_HEIGHT} from '@libs/Navigation/AppNavigator/Navigators/OnboardingModalNavigatorContentWrapper/constants';
 import Navigation from '@libs/Navigation/Navigation';
 import {isGroupPolicy, isPolicyAdmin} from '@libs/PolicyUtils';
 
@@ -292,8 +293,11 @@ function BaseOnboardingAccounting({shouldUseNativeStyles}: BaseOnboardingAccount
             shouldEnableMaxHeight={!isMobileSafari()}
             shouldAvoidScrollOnVirtualViewport={!isMobileSafari()}
         >
-            <CollapsibleHeaderOnKeyboard>
-                <OnboardingHeader onBackButtonPress={() => Navigation.goBack(ROUTES.ONBOARDING_INTERESTED_FEATURES.getRoute())} />
+            <CaretBackHeaderSlot
+                shouldEnableMaxHeight={!isMobileSafari()}
+                onBackButtonPress={() => Navigation.goBack(ROUTES.ONBOARDING_INTERESTED_FEATURES.getRoute())}
+            />
+            <CollapsibleHeaderOnKeyboard collapsibleHeaderOffset={ONBOARDING_HEADER_STRIP_HEIGHT}>
                 <View style={[onboardingIsMediumOrLargerScreenWidth && styles.mt5, onboardingIsMediumOrLargerScreenWidth ? styles.mh8 : styles.mh5]}>
                     <Text
                         style={[styles.textHeadlineH1, styles.mb5]}

@@ -1,6 +1,6 @@
 import Button from '@components/Button';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import FormHelpMessage from '@components/FormHelpMessage';
-import OnboardingHeader from '@components/OnboardingHeader';
 import ScreenWrapper from '@components/ScreenWrapper';
 import SelectionList from '@components/SelectionList';
 import SingleSelectListItem from '@components/SelectionList/ListItem/SingleSelectListItem';
@@ -146,7 +146,7 @@ function BaseOnboardingEmployees({shouldUseNativeStyles, route}: BaseOnboardingE
             testID="BaseOnboardingEmployees"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
                 shouldShowBackButton={!isEmployeesFirstStep}
                 onBackButtonPress={handleBackButtonPress}
             />

@@ -1,11 +1,11 @@
 import AutoEmailLink from '@components/AutoEmailLink';
 import Button from '@components/Button';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import FormProvider from '@components/Form/FormProvider';
 import InputWrapper from '@components/Form/InputWrapper';
 import type {FormOnyxValues} from '@components/Form/types';
 import Icon from '@components/Icon';
 import OfflineWithFeedback from '@components/OfflineWithFeedback';
-import OnboardingHeader from '@components/OnboardingHeader';
 import OnboardingMergingAccountBlockedView from '@components/OnboardingMergingAccountBlockedView';
 import ScreenWrapper from '@components/ScreenWrapper';
 import Text from '@components/Text';
@@ -205,7 +205,10 @@ function BaseOnboardingWorkEmail({shouldUseNativeStyles}: BaseOnboardingWorkEmai
             testID="BaseOnboardingWorkEmail"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader shouldShowBackButton={false} />
+            <CaretBackHeaderSlot
+                shouldEnableMaxHeight={!isMobileSafari()}
+                shouldShowBackButton={false}
+            />
             {onboardingValues?.isMergingAccountBlocked ? (
                 <View style={[styles.flex1, onboardingIsMediumOrLargerScreenWidth && styles.mt5, onboardingIsMediumOrLargerScreenWidth ? styles.mh8 : styles.mh5]}>
                     <OnboardingMergingAccountBlockedView

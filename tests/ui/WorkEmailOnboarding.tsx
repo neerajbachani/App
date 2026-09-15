@@ -28,12 +28,12 @@ import ROUTES from '@src/ROUTES';
 import SCREENS from '@src/SCREENS';
 import type {Response as OnyxResponse} from '@src/types/onyx';
 
-import {PortalProvider} from '@gorhom/portal';
 import {NavigationContainer} from '@react-navigation/native';
 import React from 'react';
 import Onyx from 'react-native-onyx';
 
 import createMock from '../utils/createMock';
+import OnboardingStickyCaretTestWrapper from '../utils/OnboardingStickyCaretTestWrapper';
 import * as TestHelper from '../utils/TestHelper';
 import waitForBatchedUpdates from '../utils/waitForBatchedUpdates';
 import waitForBatchedUpdatesWithAct from '../utils/waitForBatchedUpdatesWithAct';
@@ -64,7 +64,7 @@ function HTMLProviderWrapper({children}: {children: React.ReactNode}) {
 const renderOnboardingWorkEmailPage = (initialRouteName: typeof SCREENS.ONBOARDING.WORK_EMAIL, initialParams: OnboardingModalNavigatorParamList[typeof SCREENS.ONBOARDING.WORK_EMAIL]) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -74,7 +74,7 @@ const renderOnboardingWorkEmailPage = (initialRouteName: typeof SCREENS.ONBOARDI
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
         {wrapper: HTMLProviderWrapper},
     );
@@ -86,7 +86,7 @@ const renderOnboardingWorkEmailValidationPage = (
 ) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -96,7 +96,7 @@ const renderOnboardingWorkEmailValidationPage = (
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
         {wrapper: HTMLProviderWrapper},
     );
@@ -108,7 +108,7 @@ const renderOnboardingPrivateDomainPage = (
 ) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -118,7 +118,7 @@ const renderOnboardingPrivateDomainPage = (
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
         {wrapper: HTMLProviderWrapper},
     );

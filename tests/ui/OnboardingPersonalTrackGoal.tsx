@@ -24,11 +24,11 @@ import SCREENS from '@src/SCREENS';
 
 import type {ValueOf} from 'type-fest';
 
-import {PortalProvider} from '@gorhom/portal';
 import {NavigationContainer} from '@react-navigation/native';
 import React from 'react';
 import Onyx from 'react-native-onyx';
 
+import OnboardingStickyCaretTestWrapper from '../utils/OnboardingStickyCaretTestWrapper';
 import * as TestHelper from '../utils/TestHelper';
 import waitForBatchedUpdatesWithAct from '../utils/waitForBatchedUpdatesWithAct';
 
@@ -71,7 +71,7 @@ const renderOnboardingPersonalTrackGoalPage = (
 ) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -81,7 +81,7 @@ const renderOnboardingPersonalTrackGoalPage = (
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
     );
 };

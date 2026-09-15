@@ -1,7 +1,7 @@
 import Button from '@components/Button';
 import ButtonDisabledWhenOffline from '@components/Button/composed/ButtonDisabledWhenOffline';
 import LinkButton from '@components/Button/composed/LinkButton';
-import OnboardingHeader from '@components/OnboardingHeader';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import ScreenWrapper from '@components/ScreenWrapper';
 import SelectionList from '@components/SelectionList';
 import BareUserListItem from '@components/SelectionList/ListItem/BareUserListItem';
@@ -174,7 +174,8 @@ function BaseOnboardingWorkspaces({route, shouldUseNativeStyles}: BaseOnboarding
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
             shouldShowOfflineIndicator={isSmallScreenWidth}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
+                shouldEnableMaxHeight
                 shouldShowBackButton={!shouldHideBackButton}
                 onBackButtonPress={() => Navigation.goBack()}
             />

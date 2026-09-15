@@ -29,6 +29,7 @@ import React from 'react';
 import {ScrollView} from 'react-native';
 import Onyx from 'react-native-onyx';
 
+import OnboardingStickyCaretTestWrapper from '../utils/OnboardingStickyCaretTestWrapper';
 import * as TestHelper from '../utils/TestHelper';
 import waitForBatchedUpdatesWithAct from '../utils/waitForBatchedUpdatesWithAct';
 
@@ -56,18 +57,20 @@ jest.spyOn(Navigation, 'getTopmostReportId').mockReturnValue(undefined);
 function renderInterestedFeaturesPage() {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <NavigationContainer>
-                <Stack.Navigator initialRouteName={SCREENS.ONBOARDING.INTERESTED_FEATURES}>
-                    <Stack.Screen name={SCREENS.ONBOARDING.INTERESTED_FEATURES}>
-                        {(props) => (
-                            <BaseOnboardingInterestedFeatures
-                                {...props}
-                                shouldUseNativeStyles={false}
-                            />
-                        )}
-                    </Stack.Screen>
-                </Stack.Navigator>
-            </NavigationContainer>
+            <OnboardingStickyCaretTestWrapper>
+                <NavigationContainer>
+                    <Stack.Navigator initialRouteName={SCREENS.ONBOARDING.INTERESTED_FEATURES}>
+                        <Stack.Screen name={SCREENS.ONBOARDING.INTERESTED_FEATURES}>
+                            {(props) => (
+                                <BaseOnboardingInterestedFeatures
+                                    {...props}
+                                    shouldUseNativeStyles={false}
+                                />
+                            )}
+                        </Stack.Screen>
+                    </Stack.Navigator>
+                </NavigationContainer>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
     );
 }
@@ -75,18 +78,20 @@ function renderInterestedFeaturesPage() {
 function renderAccountingPage() {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <NavigationContainer>
-                <Stack.Navigator initialRouteName={SCREENS.ONBOARDING.ACCOUNTING}>
-                    <Stack.Screen name={SCREENS.ONBOARDING.ACCOUNTING}>
-                        {(props) => (
-                            <BaseOnboardingAccounting
-                                {...props}
-                                shouldUseNativeStyles={false}
-                            />
-                        )}
-                    </Stack.Screen>
-                </Stack.Navigator>
-            </NavigationContainer>
+            <OnboardingStickyCaretTestWrapper>
+                <NavigationContainer>
+                    <Stack.Navigator initialRouteName={SCREENS.ONBOARDING.ACCOUNTING}>
+                        <Stack.Screen name={SCREENS.ONBOARDING.ACCOUNTING}>
+                            {(props) => (
+                                <BaseOnboardingAccounting
+                                    {...props}
+                                    shouldUseNativeStyles={false}
+                                />
+                            )}
+                        </Stack.Screen>
+                    </Stack.Navigator>
+                </NavigationContainer>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
     );
 }

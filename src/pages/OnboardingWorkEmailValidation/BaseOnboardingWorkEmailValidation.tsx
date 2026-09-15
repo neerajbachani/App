@@ -1,4 +1,4 @@
-import OnboardingHeader from '@components/OnboardingHeader';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import OnboardingMergingAccountBlockedView from '@components/OnboardingMergingAccountBlockedView';
 import ScreenWrapper from '@components/ScreenWrapper';
 import Text from '@components/Text';
@@ -86,7 +86,7 @@ function BaseOnboardingWorkEmailValidation({shouldUseNativeStyles}: BaseOnboardi
             testID="BaseOnboardingWorkEmailValidation"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
                 shouldShowBackButton={!onboardingValues?.isMergingAccountBlocked}
                 onBackButtonPress={() => {
                     updateOnboardingValuesAndNavigation(onboardingValues);

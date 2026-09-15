@@ -16,13 +16,13 @@ import CONST from '@src/CONST';
 import ONYXKEYS from '@src/ONYXKEYS';
 import SCREENS from '@src/SCREENS';
 
-import {PortalProvider} from '@gorhom/portal';
 import {NavigationContainer} from '@react-navigation/native';
 import {createStackNavigator} from '@react-navigation/stack';
 import React from 'react';
 import Onyx from 'react-native-onyx';
 
 import createMock from '../utils/createMock';
+import OnboardingStickyCaretTestWrapper from '../utils/OnboardingStickyCaretTestWrapper';
 import * as TestHelper from '../utils/TestHelper';
 import waitForBatchedUpdatesWithAct from '../utils/waitForBatchedUpdatesWithAct';
 
@@ -45,7 +45,7 @@ const Stack = createStackNavigator<OnboardingModalNavigatorParamList>();
 const renderOnboardingEmployeesPage = (initialRouteName: typeof SCREENS.ONBOARDING.EMPLOYEES, initialParams: OnboardingModalNavigatorParamList[typeof SCREENS.ONBOARDING.EMPLOYEES]) => {
     return render(
         <ComposeProviders components={[OnyxListItemProvider, LocaleContextProvider, CurrentReportIDContextProvider]}>
-            <PortalProvider>
+            <OnboardingStickyCaretTestWrapper>
                 <NavigationContainer>
                     <Stack.Navigator initialRouteName={initialRouteName}>
                         <Stack.Screen
@@ -55,7 +55,7 @@ const renderOnboardingEmployeesPage = (initialRouteName: typeof SCREENS.ONBOARDI
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
-            </PortalProvider>
+            </OnboardingStickyCaretTestWrapper>
         </ComposeProviders>,
     );
 };

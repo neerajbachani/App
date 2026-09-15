@@ -1,7 +1,7 @@
 import Button from '@components/Button';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import FormHelpMessage from '@components/FormHelpMessage';
 import MenuItem from '@components/MenuItem';
-import OnboardingHeader from '@components/OnboardingHeader';
 import ScreenWrapper from '@components/ScreenWrapper';
 import Text from '@components/Text';
 import TextInput from '@components/TextInput';
@@ -87,7 +87,7 @@ function BaseOnboardingPersonalTrackGoal({shouldUseNativeStyles, route}: BaseOnb
             testID="BaseOnboardingPersonalTrackGoal"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
                 shouldShowBackButton
                 onBackButtonPress={() => {
                     Navigation.goBack(ROUTES.ONBOARDING_PURPOSE.getRoute(route.params?.backTo));

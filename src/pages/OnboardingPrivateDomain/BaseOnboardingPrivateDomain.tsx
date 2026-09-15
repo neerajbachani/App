@@ -1,4 +1,4 @@
-import OnboardingHeader from '@components/OnboardingHeader';
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import ScreenWrapper from '@components/ScreenWrapper';
 import ScrollView from '@components/ScrollView';
 import Text from '@components/Text';
@@ -129,7 +129,8 @@ function BaseOnboardingPrivateDomain({shouldUseNativeStyles, route}: BaseOnboard
             testID="BaseOnboardingPrivateDomain"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
+                shouldEnableMaxHeight
                 shouldShowBackButton
                 onBackButtonPress={handleBackButtonPress}
             />

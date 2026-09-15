@@ -1,7 +1,7 @@
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import FormHelpMessage from '@components/FormHelpMessage';
 import type {MenuItemProps} from '@components/MenuItem';
 import MenuItemList from '@components/MenuItemList';
-import OnboardingHeader from '@components/OnboardingHeader';
 import ScreenWrapper from '@components/ScreenWrapper';
 import Text from '@components/Text';
 
@@ -184,7 +184,10 @@ function BaseOnboardingPurpose({shouldUseNativeStyles, shouldEnableMaxHeight, ro
             shouldEnableMaxHeight={shouldEnableMaxHeight}
         >
             <View style={onboardingIsMediumOrLargerScreenWidth && styles.mh3}>
-                <OnboardingHeader shouldShowBackButton={false} />
+                <CaretBackHeaderSlot
+                    shouldEnableMaxHeight={shouldEnableMaxHeight}
+                    shouldShowBackButton={false}
+                />
             </View>
             <ScrollView style={[styles.flex1, styles.flexGrow1, onboardingIsMediumOrLargerScreenWidth && styles.mt5, paddingHorizontal]}>
                 <View style={styles.flex1}>

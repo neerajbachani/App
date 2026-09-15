@@ -1,0 +1,6 @@
+const ONBOARDING_STICKY_CARET_HEADER_PORTAL = 'OnboardingStickyCaretHeader';
+
+/** onboardingHeaderContainer height (52) + marginTop (8) */
+const ONBOARDING_HEADER_STRIP_HEIGHT = 60;
+
+export {ONBOARDING_HEADER_STRIP_HEIGHT, ONBOARDING_STICKY_CARET_HEADER_PORTAL};

@@ -1,7 +1,7 @@
+import CaretBackHeaderSlot from '@components/CaretBackHeaderSlot';
 import FormProvider from '@components/Form/FormProvider';
 import InputWrapper from '@components/Form/InputWrapper';
 import type {FormOnyxValues} from '@components/Form/types';
-import OnboardingHeader from '@components/OnboardingHeader';
 import ScreenWrapper from '@components/ScreenWrapper';
 import Text from '@components/Text';
 import TextInput from '@components/TextInput';
@@ -241,7 +241,8 @@ function BaseOnboardingPersonalDetails({currentUserPersonalDetails, shouldUseNat
             testID="BaseOnboardingPersonalDetails"
             style={[styles.defaultModalContainer, shouldUseNativeStyles && styles.pt8]}
         >
-            <OnboardingHeader
+            <CaretBackHeaderSlot
+                shouldEnableMaxHeight
                 shouldShowBackButton={!isPrivateDomainAndHasAccessiblePolicies}
                 onBackButtonPress={() => {
                     // Based on the `handleSubmit` function to reverse where to return
