@@ -13,7 +13,7 @@ import useSubscriptionPlan from '@hooks/useSubscriptionPlan';
 import useTheme from '@hooks/useTheme';
 import useThemeStyles from '@hooks/useThemeStyles';
 
-import {getSubscriptionPlanInfo, isSubscriptionTypeOfInvoicing} from '@libs/SubscriptionUtils';
+import {getSubscriptionPlanInfo} from '@libs/SubscriptionUtils';
 
 import variables from '@styles/variables';
 
@@ -25,7 +25,10 @@ import React from 'react';
 import {View} from 'react-native';
 
 import getSubscriptionPlanBenefitA11yProps from './getSubscriptionPlanBenefitA11yProps';
+import {shouldShowSubscriptionPlanSettings} from './getSubscriptionPlanCardView';
+import SaveWithExpensifyRow from './SaveWithExpensifyRow';
 import SubscriptionPlanCardActionButton from './SubscriptionPlanCardActionButton';
+import SubscriptionPlanSettings from './SubscriptionPlanSettings';
 
 type PersonalPolicyTypeExcludedProps = Exclude<ValueOf<typeof CONST.POLICY.TYPE>, 'personal'>;
 
@@ -96,10 +99,13 @@ function SubscriptionPlanCard({subscriptionPlan, isFromComparisonModal = false, 
         );
     };
 
-    const shouldHideSubscriptionSettingsButton =
-        isSubscriptionTypeOfInvoicing(privateSubscription?.type) &&
-        !isFromComparisonModal &&
-        ((subscriptionPlan === CONST.POLICY.TYPE.TEAM && !hasTeam2025Pricing) || subscriptionPlan !== CONST.POLICY.TYPE.TEAM);
+    const showSubscriptionSettings = shouldShowSubscriptionPlanSettings({
+        isFromComparisonModal,
+        subscriptionType: privateSubscription?.type,
+        subscriptionPlan,
+        hasTeam2025Pricing,
+    });
+    const shouldHideSubscriptionSettingsButton = !isFromComparisonModal && !showSubscriptionSettings && !!privateSubscription;
 
     const subscriptionPlanCardActionButtonWrapStyles = (() => {
         if (shouldHideSubscriptionSettingsButton) {
@@ -112,52 +118,74 @@ function SubscriptionPlanCard({subscriptionPlan, isFromComparisonModal = false, 
         return styles.pb8;
     })();
 
-    return (
-        <View style={[styles.borderedContentCard, styles.borderRadiusComponentLarge, styles.mt5, styles.flex1, isSelected && styles.borderColorFocus, styles.justifyContentBetween]}>
-            {!privateSubscription ? (
+    const cardStyles = [styles.borderedContentCard, styles.borderRadiusComponentLarge, styles.mt5, styles.flex1, isSelected && styles.borderColorFocus, styles.justifyContentBetween];
+
+    if (!privateSubscription) {
+        return (
+            <View style={cardStyles}>
                 <View style={shouldUseNarrowLayout ? styles.p5 : [styles.p8, styles.pb6]}>
                     <ActivityIndicator />
                 </View>
-            ) : (
-                <>
-                    <View style={shouldUseNarrowLayout ? styles.p5 : [styles.p8, styles.pb6]}>
-                        <View style={[styles.flexRow, styles.justifyContentBetween]}>
-                            <Icon
-                                src={src}
-                                width={variables.iconHeader}
-                                height={variables.iconHeader}
+            </View>
+        );
+    }
+
+    if (showSubscriptionSettings) {
+        return (
+            <View style={cardStyles}>
+                <SubscriptionPlanSettings
+                    planTitle={title}
+                    planIcon={src}
+                    subscriptionPlan={subscriptionPlan}
+                />
+            </View>
+        );
+    }
+
+    return (
+        <View style={cardStyles}>
+            <View style={shouldUseNarrowLayout ? styles.p5 : [styles.p8, styles.pb6]}>
+                <View style={[styles.flexRow, styles.justifyContentBetween]}>
+                    <Icon
+                        src={src}
+                        width={variables.iconHeader}
+                        height={variables.iconHeader}
+                    />
+                    {isFromComparisonModal && (
+                        <View pointerEvents="none">
+                            <RadioButton
+                                isChecked={isSelected}
+                                onPress={() => {}}
+                                accessibilityLabel=""
+                                accessible={false}
                             />
-                            {isFromComparisonModal && (
-                                <View pointerEvents="none">
-                                    <RadioButton
-                                        isChecked={isSelected}
-                                        onPress={() => {}}
-                                        accessibilityLabel=""
-                                        accessible={false}
-                                    />
-                                </View>
-                            )}
                         </View>
-                        <Text
-                            style={[styles.headerText, styles.mv2, styles.textHeadlineH2]}
-                            accessibilityRole={CONST.ROLE.HEADER}
-                        >
-                            {title}
-                        </Text>
-                        <Text style={styles.labelStrong}>{subtitle}</Text>
-                        <Text style={[styles.textLabelSupporting, styles.textSmall]}>{note}</Text>
-                        <Text style={[styles.textLabelSupporting, styles.textNormal, styles.mt3, styles.mb1]}>{description}</Text>
-                        {renderBenefits()}
-                    </View>
-                    <View style={subscriptionPlanCardActionButtonWrapStyles}>
-                        <SubscriptionPlanCardActionButton
-                            subscriptionPlan={subscriptionPlan}
-                            isFromComparisonModal={isFromComparisonModal}
-                            isSelected={isSelected}
-                            style={shouldUseNarrowLayout ? styles.ph5 : styles.ph8}
-                            closeComparisonModal={closeComparisonModal}
-                        />
-                    </View>
+                    )}
+                </View>
+                <Text
+                    style={[styles.headerText, styles.mv2, styles.textHeadlineH2]}
+                    accessibilityRole={CONST.ROLE.HEADER}
+                >
+                    {title}
+                </Text>
+                <Text style={styles.labelStrong}>{subtitle}</Text>
+                <Text style={[styles.textLabelSupporting, styles.textSmall]}>{note}</Text>
+                <Text style={[styles.textLabelSupporting, styles.textNormal, styles.mt3, styles.mb1]}>{description}</Text>
+                {renderBenefits()}
+            </View>
+            <View style={subscriptionPlanCardActionButtonWrapStyles}>
+                <SubscriptionPlanCardActionButton
+                    subscriptionPlan={subscriptionPlan}
+                    isFromComparisonModal={isFromComparisonModal}
+                    isSelected={isSelected}
+                    style={shouldUseNarrowLayout ? styles.ph5 : styles.ph8}
+                    closeComparisonModal={closeComparisonModal}
+                />
+            </View>
+            {!isFromComparisonModal && (
+                <>
+                    <View style={styles.sectionDividerLine} />
+                    <SaveWithExpensifyRow />
                 </>
             )}
         </View>
