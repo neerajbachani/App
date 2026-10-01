@@ -4634,7 +4634,11 @@ function getReasonAndReportActionThatRequiresAttention(
     const actionTypeForAssigneeToComplete = getActionTypeForAssigneeToComplete(optionOrReport, parentReportAction);
 
     // Compute IOU candidate upfront so we can compare timestamps with task candidate
-    const {reportAction: iouReportActionToApproveOrPay, actionBadge} = getIOUReportActionWithBadge(
+    const {
+        reportAction: iouReportActionToApproveOrPay,
+        actionBadge,
+        isBlockedOnlyByHeldReports,
+    } = getIOUReportActionWithBadge(
         optionOrReport,
         policy,
         optionReportMetadata,
@@ -4654,8 +4658,10 @@ function getReasonAndReportActionThatRequiresAttention(
     const iouReportActions = allReportActionsParam?.[`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${iouReportID}`] ?? getAllReportActions(iouReportID);
     // This only has to run on the fallback path: when a candidate was found, getBadgeFromIOUReport has already applied
     // the same exclusion while picking it, so the chat is known to have an actionable child even when a sibling of that
-    // child is fully held.
-    const isFallbackReportExcludedForHeldExpenses = !iouReportActionToApproveOrPay && isReportExcludedForHeldExpenses(iouReport, transactions, iouReportActions, currentUserAccountID);
+    // child is fully held. The walk flag covers the case where that fallback id is a different report than the held child
+    // (the chat's open draft), so checking only that id would never see the held transactions.
+    const isFallbackReportExcludedForHeldExpenses =
+        !iouReportActionToApproveOrPay && (isBlockedOnlyByHeldReports || isReportExcludedForHeldExpenses(iouReport, transactions, iouReportActions, currentUserAccountID));
 
     // Has a child report that is awaiting action (e.g. approve, pay, add bank account) from current user.
     // A report whose only expenses are pending Expensify Card transactions can't be actioned until they post, so it

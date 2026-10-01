@@ -413,9 +413,12 @@ function getIOUReportActionWithBadge(
 ): {
     reportAction: OnyxEntry<ReportAction>;
     actionBadge?: ValueOf<typeof CONST.REPORT.ACTION_BADGE>;
+    isBlockedOnlyByHeldReports: boolean;
 } {
     let actionBadge: ValueOf<typeof CONST.REPORT.ACTION_BADGE> | undefined;
     let earliestAction: ReportAction | undefined;
+    let hasHeldReport = false;
+    let hasUnresolvedOutstandingReport = false;
 
     for (const action of Object.values(chatReportActions ?? {})) {
         if (action?.actionName !== CONST.REPORT.ACTIONS.TYPE.REPORT_PREVIEW || isDeletedAction(action)) {
@@ -439,6 +442,10 @@ function getIOUReportActionWithBadge(
                     earliestAction = action;
                     actionBadge = CONST.REPORT.ACTION_BADGE.PAY;
                 }
+            } else if (action.childStatusNum !== CONST.REPORT.STATUS_NUM.REIMBURSED && action.childStatusNum !== CONST.REPORT.STATUS_NUM.CLOSED) {
+                // A preview whose report is not loaded yet may still need action. A missing status counts as unresolved.
+                // Reimbursed and closed previews are settled, so they must not keep the chat in To-do.
+                hasUnresolvedOutstandingReport = true;
             }
             continue;
         }
@@ -449,6 +456,8 @@ function getIOUReportActionWithBadge(
         // still needs action from the current user.
         const badge = getBadgeFromIOUReport(iouReport, chatReport, policy, reportMetadata, invoiceReceiverPolicy, currentUserLogin, currentUserAccountID, iouReportActions);
         if (!badge) {
+            // A missing badge is not enough: an empty open draft also has none. Only a held-excluded child counts.
+            hasHeldReport ||= isReportExcludedForHeldExpenses(iouReport, getReportTransactions(iouReport.reportID), iouReportActions, currentUserAccountID);
             continue;
         }
 
@@ -458,7 +467,7 @@ function getIOUReportActionWithBadge(
         }
     }
 
-    return {reportAction: earliestAction, actionBadge};
+    return {reportAction: earliestAction, actionBadge, isBlockedOnlyByHeldReports: !earliestAction && hasHeldReport && !hasUnresolvedOutstandingReport};
 }
 
 /**
