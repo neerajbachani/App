@@ -258,6 +258,11 @@ function getNewAccountIDsAndLogins(invitedEmailsToAccountIDs: InvitedEmailsToAcc
 
 type PersonalDetailsUpdate = OnyxMergeInput<typeof ONYXKEYS.PERSONAL_DETAILS_LIST>;
 
+// Session preserves this key across the login-required 2FA clear. Callers must not name PERSONAL_DETAILS_LIST themselves.
+function getPersonalDetailsListKey() {
+    return ONYXKEYS.PERSONAL_DETAILS_LIST;
+}
+
 // All writes are merges, and the builder is what turns one list update into one update per account after the reshape
 function buildPersonalDetailsUpdate(personalDetails: PersonalDetailsUpdate): OnyxUpdate<typeof ONYXKEYS.PERSONAL_DETAILS_LIST> {
     return {
@@ -560,4 +565,5 @@ export {
     areTravelPersonalDetailsMissing,
     temporaryGetDisplayNameOrDefault,
     buildPersonalDetailsUpdate,
+    getPersonalDetailsListKey,
 };

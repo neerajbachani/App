@@ -861,6 +861,41 @@ describe('Session', () => {
             clearSpy.mockRestore();
             writeWithNoDuplicatesSpy.mockRestore();
         });
+
+        test('login-required path merges the confirmed 2FA state and keeps the loaded identity', async () => {
+            // Given a user who just signed in and is forced to set up 2FA, with the verify screen still open
+            const makeRequestSpy = jest.spyOn(API, 'makeRequestWithSideEffects').mockResolvedValue({
+                authToken: 'newAuthToken',
+                encryptedAuthToken: 'newEncryptedAuthToken',
+            });
+            const mergeSpy = jest.spyOn(Onyx, 'merge').mockResolvedValue(undefined);
+            const multiSetSpy = jest.spyOn(Onyx, 'multiSet').mockResolvedValue(undefined);
+            const clearSpy = jest.spyOn(Onyx, 'clear').mockResolvedValue(undefined);
+            const openAppSpy = jest.spyOn(API, 'writeWithNoDuplicatesOpenAppConflictAction').mockResolvedValue(undefined);
+
+            // When the authenticator code is accepted
+            SessionUtil.validateTwoFactorAuth('123456', true);
+            await waitForBatchedUpdates();
+
+            // Then the confirmed account state is merged before the clear, and the identity the open screens need is kept
+            expect(mergeSpy).toHaveBeenCalledWith(ONYXKEYS.ACCOUNT, {
+                requiresTwoFactorAuth: true,
+                needsTwoFactorAuthSetup: false,
+                twoFactorAuthSecretKey: null,
+                isLoading: false,
+            });
+            expect(mergeSpy.mock.invocationCallOrder.at(0)).toBeLessThan(clearSpy.mock.invocationCallOrder.at(0) ?? Number.MAX_SAFE_INTEGER);
+            expect(clearSpy.mock.calls.at(0)?.at(0)).toEqual(
+                expect.arrayContaining([ONYXKEYS.PRIVATE_PERSONAL_DETAILS, ONYXKEYS.HAS_LOADED_APP, ONYXKEYS.PERSONAL_DETAILS_LIST, ONYXKEYS.ACCOUNT]),
+            );
+            expect(openAppSpy).toHaveBeenCalled();
+
+            makeRequestSpy.mockRestore();
+            mergeSpy.mockRestore();
+            multiSetSpy.mockRestore();
+            clearSpy.mockRestore();
+            openAppSpy.mockRestore();
+        });
     });
 
     describe('clearTwoFactorAuthSecretKey', () => {

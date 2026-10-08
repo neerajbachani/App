@@ -1,8 +1,8 @@
 import useOnyx from '@hooks/useOnyx';
 
-import {shouldHideOldAppRedirect} from '@libs/TryNewDotUtils';
+import {isLockedToNewApp, shouldHideOldAppRedirect} from '@libs/TryNewDotUtils';
 
-import {closeReactNativeApp} from '@userActions/HybridApp';
+import {closeReactNativeApp, setShouldReturnToOldDotAfter2FA} from '@userActions/HybridApp';
 import {quitAndNavigateBack} from '@userActions/TwoFactorAuthActions';
 
 import CONFIG from '@src/CONFIG';
@@ -16,6 +16,7 @@ import SuccessPageBase from './SuccessPageBase';
 
 function SuccessPage() {
     const [tryNewDot, tryNewDotMetadata] = useOnyx(ONYXKEYS.NVP_TRY_NEW_DOT);
+    const [hybridApp] = useOnyx(ONYXKEYS.HYBRID_APP);
     const isLoadingTryNewDot = isLoadingOnyxValue(tryNewDotMetadata);
     const isClassicRedirectBlocked = shouldHideOldAppRedirect(tryNewDot, isLoadingTryNewDot, CONFIG.IS_HYBRID_APP);
     const isClassicRedirectDismissed = tryNewDot?.classicRedirect?.dismissed;
@@ -25,7 +26,9 @@ function SuccessPage() {
     };
 
     const onButtonPress = () => {
-        if (CONFIG.IS_HYBRID_APP && isClassicRedirectDismissed && !isClassicRedirectBlocked) {
+        const shouldCloseForClassic = !!hybridApp?.shouldReturnToOldDotAfter2FA || (!!isClassicRedirectDismissed && !isClassicRedirectBlocked);
+        if (CONFIG.IS_HYBRID_APP && shouldCloseForClassic && !isLockedToNewApp(tryNewDot)) {
+            setShouldReturnToOldDotAfter2FA(false);
             closeReactNativeApp({shouldSetNVP: false, isTrackingGPS: false});
             return;
         }

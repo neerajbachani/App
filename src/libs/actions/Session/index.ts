@@ -37,7 +37,7 @@ import {getCurrentUserEmail} from '@libs/Network/NetworkStore';
 import * as SequentialQueue from '@libs/Network/SequentialQueue';
 import {rand64} from '@libs/NumberUtils';
 import openExternalLink from '@libs/openExternalLink';
-import {buildPersonalDetailsUpdate} from '@libs/PersonalDetailsUtils';
+import {buildPersonalDetailsUpdate, getPersonalDetailsListKey} from '@libs/PersonalDetailsUtils';
 import type {PersonalDetailsOnyxUpdate} from '@libs/PersonalDetailsUtils';
 import clearPrefetchOnAppStart from '@libs/Prefetch/clearPrefetchOnAppStart';
 import Pusher from '@libs/Pusher';
@@ -1518,10 +1518,20 @@ function validateTwoFactorAuth(twoFactorAuthCode: string, shouldClearData: boole
             return;
         }
 
-        // Clear onyx data if the user has just signed in and is forced to add 2FA
+        // Clear onyx data if the user has just signed in and is forced to add 2FA.
+        // The 2FA screens are still mounted, so merge the confirmed account state first (a multiSet would
+        // replace ACCOUNT and drop codesAreCopied) and keep the loaded identity. The clear sets IS_LOADING_APP,
+        // and useIsAgentAccount renders those screens blank unless HAS_LOADED_APP and personal details survive.
         if (shouldClearData) {
-            const keysToPreserveWithPrivatePersonalDetails = [...KEYS_TO_PRESERVE, ONYXKEYS.PRIVATE_PERSONAL_DETAILS];
-            clearOnyxAndSeedFullReconnect(keysToPreserveWithPrivatePersonalDetails).then(() => updateAuthTokenAndOpenApp(response.authToken, response.encryptedAuthToken));
+            const keysToPreserveForLoginRequired2FA = [...KEYS_TO_PRESERVE, ONYXKEYS.PRIVATE_PERSONAL_DETAILS, ONYXKEYS.HAS_LOADED_APP, getPersonalDetailsListKey()];
+            Onyx.merge(ONYXKEYS.ACCOUNT, {
+                requiresTwoFactorAuth: true,
+                needsTwoFactorAuthSetup: false,
+                twoFactorAuthSecretKey: null,
+                isLoading: false,
+            })
+                .then(() => clearOnyxAndSeedFullReconnect(keysToPreserveForLoginRequired2FA))
+                .then(() => updateAuthTokenAndOpenApp(response.authToken, response.encryptedAuthToken));
             return;
         }
 

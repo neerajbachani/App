@@ -10,10 +10,11 @@ import getStateFromPath from '@libs/Navigation/helpers/getStateFromPath';
 import Navigation from '@libs/Navigation/Navigation';
 import type {PlatformStackScreenProps} from '@libs/Navigation/PlatformStackNavigation/types';
 import type {TwoFactorAuthNavigatorParamList} from '@libs/Navigation/types';
-import {shouldHideOldAppRedirect} from '@libs/TryNewDotUtils';
+import {isLockedToNewApp, shouldHideOldAppRedirect} from '@libs/TryNewDotUtils';
 
+import {openApp} from '@userActions/App';
 import {openReimbursementAccountPage} from '@userActions/BankAccounts';
-import {closeReactNativeApp} from '@userActions/HybridApp';
+import {closeReactNativeApp, setShouldReturnToOldDotAfter2FA} from '@userActions/HybridApp';
 import {openLink} from '@userActions/Link';
 import {clearTwoFactorAuthData, quitAndNavigateBack} from '@userActions/TwoFactorAuthActions';
 import {buildOnboardingFlowParams, resumeOnboardingAfterRequired2FASetup} from '@userActions/Welcome/OnboardingFlow';
@@ -44,6 +45,7 @@ function DynamicSuccessPage({route}: DynamicSuccessPageProps) {
     const isSecuritySettingsFlow = focusedRoute?.name === SCREENS.SETTINGS.SECURITY;
 
     const [tryNewDot, tryNewDotMetadata] = useOnyx(ONYXKEYS.NVP_TRY_NEW_DOT);
+    const [hybridApp] = useOnyx(ONYXKEYS.HYBRID_APP);
     const [account] = useOnyx(ONYXKEYS.ACCOUNT);
     const [onboardingValues] = useOnyx(ONYXKEYS.NVP_ONBOARDING);
     const hasCompletedGuidedSetupFlow = hasCompletedGuidedSetupFlowSelector(onboardingValues);
@@ -94,7 +96,18 @@ function DynamicSuccessPage({route}: DynamicSuccessPageProps) {
     };
 
     const onButtonPress = () => {
-        if (CONFIG.IS_HYBRID_APP && isClassicRedirectDismissed && !isClassicRedirectBlocked) {
+        // Sign-in stores the Classic hold on hybridApp because this screen's classicRedirect check is stricter
+        // than shouldUseOldApp, and the post-validate OpenApp has already restored nvp_tryNewDot by the time we get here.
+        // closeReactNativeApp no-ops for an account locked to NewDot, so that case falls through.
+        const shouldCloseForClassic = !!hybridApp?.shouldReturnToOldDotAfter2FA || (!!isClassicRedirectDismissed && !isClassicRedirectBlocked);
+        if (CONFIG.IS_HYBRID_APP && shouldCloseForClassic && !isLockedToNewApp(tryNewDot)) {
+            setShouldReturnToOldDotAfter2FA(false);
+            // The onboarding handoff below is skipped once we close, so do its cleanup here. Otherwise
+            // twoFactorAuthSetupInProgress stays set and the deferred openApp never runs.
+            clearTwoFactorAuthData(true);
+            if (isForcedOnboardingHandoff) {
+                openApp();
+            }
             closeReactNativeApp({shouldSetNVP: false, isTrackingGPS: false});
             return;
         }

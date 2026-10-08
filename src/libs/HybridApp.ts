@@ -8,7 +8,7 @@ import type {OnyxEntry} from 'react-native-onyx';
 import HybridAppModule from '@expensify/react-native-hybrid-app';
 import Onyx from 'react-native-onyx';
 
-import {closeReactNativeApp, setReadyToShowAuthScreens, setUseNewDotSignInPage} from './actions/HybridApp';
+import {closeReactNativeApp, setReadyToShowAuthScreens, setShouldReturnToOldDotAfter2FA, setUseNewDotSignInPage} from './actions/HybridApp';
 import Log from './Log';
 import {getCurrentUserEmail} from './Network/NetworkStore';
 import {shouldUseOldApp} from './TryNewDotUtils';
@@ -117,11 +117,17 @@ function signInToOldDotAndChooseExperience(
 
     if (tryNewDot !== undefined) {
         setUseNewDotSignInPage(false).then(() => {
-            if (shouldUseOldApp(tryNewDot) && (!account?.needsTwoFactorAuthSetup || account?.requiresTwoFactorAuth)) {
-                closeReactNativeApp({shouldSetNVP: false, isTrackingGPS: false});
-            } else {
+            const shouldReturnToOldDot = !!shouldUseOldApp(tryNewDot);
+            const isHeldForRequired2FA = !!account?.needsTwoFactorAuthSetup && !account?.requiresTwoFactorAuth;
+            // Persist the hold before closing. HYBRID_APP survives the close, so a stale true from a
+            // previous account would otherwise still be there when this write has not flushed.
+            return setShouldReturnToOldDotAfter2FA(shouldReturnToOldDot && isHeldForRequired2FA).then(() => {
+                if (shouldReturnToOldDot && !isHeldForRequired2FA) {
+                    closeReactNativeApp({shouldSetNVP: false, isTrackingGPS: false});
+                    return;
+                }
                 setReadyToShowAuthScreens(true);
-            }
+            });
         });
     }
 }

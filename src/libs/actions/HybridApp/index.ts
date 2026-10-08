@@ -142,6 +142,14 @@ function setUseNewDotSignInPage(useNewDotSignInPage: boolean) {
     return Onyx.merge(ONYXKEYS.HYBRID_APP, {useNewDotSignInPage});
 }
 
+function setShouldReturnToOldDotAfter2FA(shouldReturnToOldDotAfter2FA: boolean) {
+    // This value is only relevant for HybridApp, so we can skip it in other environments.
+    if (!CONFIG.IS_HYBRID_APP) {
+        return Promise.resolve();
+    }
+    return Onyx.merge(ONYXKEYS.HYBRID_APP, {shouldReturnToOldDotAfter2FA});
+}
+
 /*
  * Starts HybridApp sign-in flow from the beginning.
  */
@@ -154,7 +162,9 @@ function resetSignInFlow() {
     return Onyx.merge(ONYXKEYS.HYBRID_APP, {
         readyToShowAuthScreens: false,
         useNewDotSignInPage: true,
+        // HYBRID_APP survives sign-out, so a hold recorded for the previous account must not follow the next one.
+        shouldReturnToOldDotAfter2FA: false,
     });
 }
 
-export {getHybridAppSettings, setReadyToShowAuthScreens, resetSignInFlow, setUseNewDotSignInPage, closeReactNativeApp};
+export {getHybridAppSettings, setReadyToShowAuthScreens, resetSignInFlow, setShouldReturnToOldDotAfter2FA, setUseNewDotSignInPage, closeReactNativeApp};

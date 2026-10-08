@@ -58,6 +58,13 @@ type HybridApp = {
 
     /** Indicates if user pressed the "Try New Expensify" button */
     pressedTryNewExpensify?: boolean;
+
+    /**
+     * Sign-in kept this Classic user in NewDot only because required 2FA was still pending.
+     * The 2FA success screen reads it to hand the user back to OldDot. It survives the
+     * post-validate Onyx reset because HYBRID_APP is in KEYS_TO_PRESERVE.
+     */
+    shouldReturnToOldDotAfter2FA?: boolean;
 };
 
 export default HybridApp;
