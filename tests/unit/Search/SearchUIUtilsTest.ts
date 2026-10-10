@@ -1201,6 +1201,7 @@ const transactionReportGroupListItems = createMock<Array<TransactionReportGroupL
         paidByAvatar: undefined,
         paidByAccountID: undefined,
         formattedPaidBy: '',
+        paid: '',
         stateNum: 0,
         statusNum: 0,
         to: emptyPersonalDetails,
@@ -1333,6 +1334,7 @@ const transactionReportGroupListItems = createMock<Array<TransactionReportGroupL
         paidByAvatar: undefined,
         paidByAccountID: undefined,
         formattedPaidBy: '',
+        paid: '',
         stateNum: 1,
         statusNum: 1,
         to: {
@@ -1471,6 +1473,7 @@ const transactionReportGroupListItems = createMock<Array<TransactionReportGroupL
         paidByAvatar: undefined,
         paidByAccountID: undefined,
         formattedPaidBy: '',
+        paid: '',
         stateNum: 1,
         statusNum: 1,
         total: 4400,
@@ -1695,6 +1698,7 @@ const transactionReportGroupListItems = createMock<Array<TransactionReportGroupL
         paidByAvatar: undefined,
         paidByAccountID: undefined,
         formattedPaidBy: '',
+        paid: '',
         stateNum: 0,
         statusNum: 0,
         to: emptyPersonalDetails,
@@ -7673,6 +7677,7 @@ describe('SearchUIUtils', () => {
                 const [sections] = callGetReportSections(data);
                 const item = sections.find((s) => s.keyForList === rptFilterReportID);
                 expect(item?.paidByAccountID).toBe(approverAccountID);
+                expect(item?.paid).toBe('2024-12-22 09:30:00');
             });
 
             it('should populate paidBy from a live pay action missing from the snapshot (pay from Search)', () => {
@@ -7693,6 +7698,7 @@ describe('SearchUIUtils', () => {
                 });
                 const item = sections.find((s) => s.keyForList === rptFilterReportID);
                 expect(item?.paidByAccountID).toBe(approverAccountID);
+                expect(item?.paid).toBe('2024-12-22 09:30:00');
             });
 
             it('should leave paidBy blank when the submitter marked the payment as received', () => {
@@ -7727,6 +7733,8 @@ describe('SearchUIUtils', () => {
                 const item = sections.find((s) => s.keyForList === rptFilterReportID);
                 expect(item?.paidByAccountID).toBeUndefined();
                 expect(item?.formattedPaidBy).toBe('');
+                // The receipt still marks the report paid, so the date is set even though no payer is named.
+                expect(item?.paid).toBe('2024-12-22 09:30:00');
             });
 
             it('should ignore payment actions at or before the latest reimbursement cancellation', () => {
@@ -7753,6 +7761,62 @@ describe('SearchUIUtils', () => {
                 );
                 const item = sections.find((s) => s.keyForList === rptFilterReportID);
                 expect(item?.paidByAccountID).toBeUndefined();
+                expect(item?.paid).toBe('');
+            });
+
+            it('should leave paid blank on a report that is not reimbursed', () => {
+                const [sections] = callGetReportSections(
+                    makeReportFilterTestData(
+                        {type: CONST.REPORT.TYPE.EXPENSE, stateNum: CONST.REPORT.STATE_NUM.APPROVED, statusNum: CONST.REPORT.STATUS_NUM.APPROVED},
+                        {},
+                        {
+                            [`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${rptFilterReportID}`]: {
+                                'reimbursed-1': {
+                                    reportActionID: 'reimbursed-1',
+                                    actionName: CONST.REPORT.ACTIONS.TYPE.MARKED_REIMBURSED,
+                                    actorAccountID: approverAccountID,
+                                    created: '2024-12-22 09:30:00',
+                                },
+                            },
+                        },
+                    ),
+                );
+                const item = sections.find((s) => s.keyForList === rptFilterReportID);
+                expect(item?.paid).toBe('');
+            });
+
+            it('should use the payment after a cancellation for the paid date', () => {
+                const repaidAt = '2024-12-23 11:00:00';
+                const [sections] = callGetReportSections(
+                    makeReportFilterTestData({type: CONST.REPORT.TYPE.EXPENSE, stateNum: CONST.REPORT.STATE_NUM.APPROVED, statusNum: CONST.REPORT.STATUS_NUM.REIMBURSED}),
+                    {
+                        reportActions: {
+                            [`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${rptFilterReportID}`]: [
+                                {
+                                    reportActionID: 'reimbursed-1',
+                                    actionName: CONST.REPORT.ACTIONS.TYPE.REIMBURSED,
+                                    actorAccountID: approverAccountID,
+                                    created: '2024-12-20 08:00:00',
+                                },
+                                {
+                                    reportActionID: 'dequeued-1',
+                                    actionName: CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_DEQUEUED,
+                                    actorAccountID: approverAccountID,
+                                    created: '2024-12-21 10:00:00',
+                                },
+                                {
+                                    reportActionID: 'reimbursed-2',
+                                    actionName: CONST.REPORT.ACTIONS.TYPE.REIMBURSED,
+                                    actorAccountID: approverAccountID,
+                                    created: repaidAt,
+                                },
+                            ],
+                        },
+                    },
+                );
+                const item = sections.find((s) => s.keyForList === rptFilterReportID);
+                expect(item?.paid).toBe(repaidAt);
+                expect(item?.paidByAccountID).toBe(approverAccountID);
             });
 
             it('should use the first approval after the latest UNAPPROVED action when the report was re-approved', () => {

@@ -60,6 +60,7 @@ function ExpenseReportListItemRowWide({
     const submitterPayrollID = item.submitterPayrollID;
     const orderDealNumbers = item.orderDealNumbers;
     const {debitedAmount, debitedCurrency, creditedAmount, creditedCurrency} = item;
+    const paidDate = item.paid ? item.paid : '';
 
     const columnComponents = {
         [CONST.SEARCH.TABLE_COLUMNS.AVATAR]: <ExpenseReportListItemAvatar item={item} />,
@@ -123,6 +124,16 @@ function ExpenseReportListItemRowWide({
                         isLargeScreenWidth
                     />
                 )}
+            </View>
+        ),
+        [CONST.SEARCH.TABLE_COLUMNS.PAID]: (
+            <View style={[getSearchColumnStyles(CONST.SEARCH.TABLE_COLUMNS.PAID)]}>
+                <DateCell
+                    date={paidDate}
+                    showTooltip
+                    isLargeScreenWidth
+                    shouldUseLocalTimeZone
+                />
             </View>
         ),
         [CONST.SEARCH.TABLE_COLUMNS.EXPORTED]: (

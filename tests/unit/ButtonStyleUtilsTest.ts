@@ -79,3 +79,9 @@ describe('getReportTableColumnStyles - First approved column width', () => {
         expect(getReportTableColumnStyles(CONST.SEARCH.TABLE_COLUMNS.FIRST_APPROVED)).toEqual({width: variables.w102});
     });
 });
+
+describe('getReportTableColumnStyles - Paid column width', () => {
+    it('uses a fixed wide width (fits a past-year date, so no year-based widening)', () => {
+        expect(getReportTableColumnStyles(CONST.SEARCH.TABLE_COLUMNS.PAID)).toEqual({width: variables.w102});
+    });
+});

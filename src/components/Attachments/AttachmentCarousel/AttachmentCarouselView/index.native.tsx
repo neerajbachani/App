@@ -39,10 +39,13 @@ function AttachmentCarouselView({
     const [activeAttachmentID, setActiveAttachmentID] = useState<AttachmentSource>(attachmentID ?? source);
 
     const pagerRef = useRef<AttachmentCarouselPagerHandle>(null);
+    const pageRef = useRef(page);
+    pageRef.current = page;
 
     /** Updates the page state when the user navigates between attachments */
     const updatePage = useCallback(
         (newPageIndex: number) => {
+            pageRef.current = newPageIndex;
             Keyboard.dismiss();
             setShouldShowArrows(true);
 
@@ -107,7 +110,18 @@ function AttachmentCarouselView({
                         onAttachmentError={onAttachmentError}
                         activeAttachmentID={activeAttachmentID}
                         setShouldShowArrows={setShouldShowArrows}
-                        onPageSelected={({nativeEvent: {position: newPage}}) => updatePage(newPage)}
+                        onPageSelected={({nativeEvent: {position: newPage}}) => {
+                            const currentPage = pageRef.current ?? null;
+                            if (currentPage == null || newPage === currentPage) {
+                                return;
+                            }
+                            // The iOS pager can select page 0 when the keyboard opens. A swipe moves one page.
+                            if (Math.abs(newPage - currentPage) !== 1) {
+                                pagerRef.current?.setPage(currentPage);
+                                return;
+                            }
+                            updatePage(newPage);
+                        }}
                         onSwipeDown={onSwipeDown}
                         ref={pagerRef}
                         reportID={report?.reportID}

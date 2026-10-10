@@ -276,6 +276,9 @@ type TransactionReportGroupListItemType = TransactionGroupListItemType & {groupe
         /** Final and formatted "paid by" value used for displaying and sorting */
         formattedPaidBy?: string;
 
+        /** When the report was paid (created time of the latest standing payment action); blank until it is paid */
+        paid?: string;
+
         shouldShowStatusAsPending?: boolean;
 
         /**

@@ -2045,6 +2045,10 @@ const createStyleUtils = (theme: ThemeColors, styles: ThemeStyles) => ({
                 // Fixed width: wide enough for both the long "First approved" header and a past-year date, so no year-based widening is needed.
                 columnWidth = {...getWidthStyle(variables.w102)};
                 break;
+            case CONST.SEARCH.TABLE_COLUMNS.PAID:
+                // Fixed width: "Paid" is short, but a past-year date needs the same room as First approved.
+                columnWidth = {...getWidthStyle(variables.w102)};
+                break;
             case CONST.SEARCH.TABLE_COLUMNS.POSTED:
                 columnWidth = {...getWidthStyle(isPostedColumnWide ? variables.w102 : variables.w62)};
                 break;

@@ -356,6 +356,7 @@ const expenseReportColumnNamesToSortingProperty: ExpenseReportSorting = {
     [CONST.SEARCH.TABLE_COLUMNS.FIRST_APPROVER]: 'formattedFirstApprover' as const,
     [CONST.SEARCH.TABLE_COLUMNS.FIRST_APPROVED]: 'firstApproved' as const,
     [CONST.SEARCH.TABLE_COLUMNS.PAID_BY]: 'formattedPaidBy' as const,
+    [CONST.SEARCH.TABLE_COLUMNS.PAID]: 'paid' as const,
     [CONST.SEARCH.TABLE_COLUMNS.EXPORTED]: 'exported' as const,
     [CONST.SEARCH.TABLE_COLUMNS.STATUS]: 'formattedStatus' as const,
     [CONST.SEARCH.TABLE_COLUMNS.PAID_STATUS]: 'formattedPaidStatus' as const,
@@ -2640,6 +2641,48 @@ function getFirstApprovedAction(snapshotApprovedAction: OnyxTypes.ReportAction |
     return findActionByCreated(candidates, [CONST.REPORT.ACTIONS.TYPE.APPROVED, CONST.REPORT.ACTIONS.TYPE.FORWARDED], 'earliest', seed);
 }
 
+const PAYMENT_ACTION_NAMES: Array<OnyxTypes.ReportAction['actionName']> = [
+    CONST.REPORT.ACTIONS.TYPE.REIMBURSED,
+    CONST.REPORT.ACTIONS.TYPE.MARKED_REIMBURSED,
+    CONST.REPORT.ACTIONS.TYPE.MARK_REIMBURSED_FROM_INTEGRATION,
+    CONST.REPORT.ACTIONS.TYPE.IOU,
+];
+
+const REIMBURSEMENT_CANCELLATION_ACTION_NAMES: Array<OnyxTypes.ReportAction['actionName']> = [
+    CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_DEQUEUED,
+    CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_ACH_CANCELED,
+    CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_ACH_BOUNCE,
+];
+
+/**
+ * A payment action that still stands: a PAY money request, or a reimbursed action, created after the latest
+ * reimbursement cancellation. A submitter's "received payment" self-attestation still stands — it marks the report
+ * paid even though it names no payer.
+ */
+function isStandingPaymentAction(action: OnyxTypes.ReportAction | undefined, latestCancellation: OnyxTypes.ReportAction | undefined): action is OnyxTypes.ReportAction {
+    if (!action) {
+        return false;
+    }
+    if (isMoneyRequestAction(action)) {
+        const originalMessage = getOriginalMessage<typeof CONST.REPORT.ACTIONS.TYPE.IOU>(action);
+        if (originalMessage?.type !== CONST.IOU.REPORT_ACTION_TYPE.PAY) {
+            return false;
+        }
+    }
+    return !latestCancellation || action.created > latestCancellation.created;
+}
+
+/**
+ * When the report was paid: the created time of the latest standing payment action, between the snapshot-derived one
+ * and the given report actions. Blank when no payment still stands.
+ */
+function getPaidDate(snapshotPaidAction: OnyxTypes.ReportAction | undefined, actions: OnyxTypes.ReportAction[]): string {
+    const latestCancellation = findActionByCreated(actions, REIMBURSEMENT_CANCELLATION_ACTION_NAMES, 'latest');
+    const seed = isStandingPaymentAction(snapshotPaidAction, latestCancellation) ? snapshotPaidAction : undefined;
+    const candidates = actions.filter((action) => isStandingPaymentAction(action, latestCancellation));
+    return findActionByCreated(candidates, PAYMENT_ACTION_NAMES, 'latest', seed)?.created ?? '';
+}
+
 /**
  * Returns the latest payment action between the snapshot-derived one and the given report actions, mirroring the
  * backend paid-by rules: payment actions at or before the latest reimbursement cancellation don't count, and a
@@ -2651,23 +2694,16 @@ function getLastPaidAction(
     actions: OnyxTypes.ReportAction[],
     ownerAccountID: number | undefined,
 ): OnyxTypes.ReportAction | undefined {
-    const latestCancellation = findActionByCreated(
-        actions,
-        [CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_DEQUEUED, CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_ACH_CANCELED, CONST.REPORT.ACTIONS.TYPE.REIMBURSEMENT_ACH_BOUNCE],
-        'latest',
-    );
+    const latestCancellation = findActionByCreated(actions, REIMBURSEMENT_CANCELLATION_ACTION_NAMES, 'latest');
     const isValidPaymentAction = (action: OnyxTypes.ReportAction | undefined): action is OnyxTypes.ReportAction => {
-        if (!action) {
+        if (!isStandingPaymentAction(action, latestCancellation)) {
             return false;
         }
         if (isMoneyRequestAction(action)) {
             const originalMessage = getOriginalMessage<typeof CONST.REPORT.ACTIONS.TYPE.IOU>(action);
-            if (originalMessage?.type !== CONST.IOU.REPORT_ACTION_TYPE.PAY || originalMessage.isSubmitterMarkedPaymentReceived) {
+            if (originalMessage?.isSubmitterMarkedPaymentReceived) {
                 return false;
             }
-        }
-        if (latestCancellation && action.created <= latestCancellation.created) {
-            return false;
         }
         if (action.actorAccountID !== ownerAccountID) {
             return true;
@@ -2681,12 +2717,7 @@ function getLastPaidAction(
     };
     const seed = isValidPaymentAction(snapshotPaidAction) ? snapshotPaidAction : undefined;
     const candidates = actions.filter(isValidPaymentAction);
-    return findActionByCreated(
-        candidates,
-        [CONST.REPORT.ACTIONS.TYPE.REIMBURSED, CONST.REPORT.ACTIONS.TYPE.MARKED_REIMBURSED, CONST.REPORT.ACTIONS.TYPE.MARK_REIMBURSED_FROM_INTEGRATION, CONST.REPORT.ACTIONS.TYPE.IOU],
-        'latest',
-        seed,
-    );
+    return findActionByCreated(candidates, PAYMENT_ACTION_NAMES, 'latest', seed);
 }
 
 /**
@@ -2834,11 +2865,12 @@ function getReportSections({
                 const formattedTo = !shouldShowBlankTo ? temporaryGetDisplayNameOrDefault({passedPersonalDetails: toDetails, translate, formatPhoneNumber}) : '';
                 const formattedFirstApprover = firstApproverAccountID ? temporaryGetDisplayNameOrDefault({passedPersonalDetails: firstApproverDetails, translate, formatPhoneNumber}) : '';
 
-                // The paid-by user is the actor on the latest payment action. It stays blank until the report is paid.
-                const lastReimbursedAction =
-                    reportItem.statusNum === CONST.REPORT.STATUS_NUM.REIMBURSED
-                        ? getLastPaidAction(lastReimbursedActionByReportID.get(reportItem.reportID), actions, reportItem.ownerAccountID)
-                        : undefined;
+                // Paid by and the paid date both stay blank until the report is reimbursed. They share the cancellation
+                // cutoff, but the date also counts a submitter's "received payment" mark, which names no payer.
+                const isReportPaid = reportItem.statusNum === CONST.REPORT.STATUS_NUM.REIMBURSED;
+                const snapshotPaidAction = lastReimbursedActionByReportID.get(reportItem.reportID);
+                const lastReimbursedAction = isReportPaid ? getLastPaidAction(snapshotPaidAction, actions, reportItem.ownerAccountID) : undefined;
+                const paid = isReportPaid ? getPaidDate(snapshotPaidAction, actions) : '';
                 const paidByAccountID = lastReimbursedAction?.actorAccountID;
                 const paidByDetails = paidByAccountID ? mergedPersonalDetails?.[paidByAccountID] : undefined;
                 const formattedPaidBy = paidByAccountID ? temporaryGetDisplayNameOrDefault({passedPersonalDetails: paidByDetails, translate, formatPhoneNumber}) : '';
@@ -2882,6 +2914,7 @@ function getReportSections({
                     exported: lastExportedActionByReportID.get(reportItem.reportID)?.created ?? '',
                     submitted: getSubmittedDate(reportItem, actions),
                     approved: getApprovedDate(reportItem, actions),
+                    paid,
                     exportedTo: getExportedToSortValue(exportedToNamesByReportID, reportItem.reportID),
                     firstApproved,
                     firstApproverAvatar: firstApproverDetails?.avatar,
@@ -4462,6 +4495,8 @@ function getSearchColumnTranslationKey(column: SearchSortBy, type?: SearchDataTy
             return 'search.filters.firstApproved';
         case CONST.SEARCH.TABLE_COLUMNS.PAID_BY:
             return 'search.filters.paidBy';
+        case CONST.SEARCH.TABLE_COLUMNS.PAID:
+            return 'search.filters.paid';
         case CONST.SEARCH.TABLE_COLUMNS.POSTED:
             return 'search.filters.posted';
         case CONST.SEARCH.TABLE_COLUMNS.EXPORTED:
@@ -7015,6 +7050,9 @@ function getTableMinWidth(
             minWidth += (isActionColumnWide ?? type === CONST.SEARCH.DATA_TYPES.TASK) ? 80 : 68;
         } else if (column === CONST.SEARCH.TABLE_COLUMNS.DATE) {
             minWidth += isCreatedDateType(type) ? 80 : 62;
+        } else if (column === CONST.SEARCH.TABLE_COLUMNS.PAID) {
+            // Fixed, matching the column style: wide enough for a past-year date, so it must not fall through to 200.
+            minWidth += variables.w102;
         } else if (
             column === CONST.SEARCH.TABLE_COLUMNS.SUBMITTED ||
             column === CONST.SEARCH.TABLE_COLUMNS.APPROVED ||
