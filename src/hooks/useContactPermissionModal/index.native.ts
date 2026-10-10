@@ -17,15 +17,24 @@ import {RESULTS} from 'react-native-permissions';
 
 import type UseContactPermissionModalParams from './types';
 
+// Stable id so the prompt can be closed after the screen that opened it unmounts. closeModalByID no-ops when the id is gone.
+const CONTACT_PERMISSION_MODAL_ID = 'contact-permission-modal';
+
 function useContactPermissionModal({onDeny, onGrant, onFocusTextInput}: UseContactPermissionModalParams) {
     const [hasDeniedContactImportPrompt, hasDeniedContactImportPromptMetadata] = useOnyx(ONYXKEYS.HAS_DENIED_CONTACT_IMPORT_PROMPT);
 
     const styles = useThemeStyles();
     const {translate} = useLocalize();
     const illustrations = useMemoizedLazyIllustrations(['ToddWithPhones']);
-    const {showConfirmModal} = useConfirmModal();
-
+    const {showConfirmModal, closeModalByID} = useConfirmModal();
+    // closeModalByID's identity changes whenever ModalProvider re-renders. Keep the latest one in a ref so the
+    // unmount cleanup can call it without listing it as an effect dependency, which would re-run the effect and
+    // close the prompt while it is still on screen.
+    const closeModalByIDRef = useRef(closeModalByID);
     const isMountedRef = useRef(false);
+    useEffect(() => {
+        closeModalByIDRef.current = closeModalByID;
+    }, [closeModalByID]);
 
     const runContactPermissionFlow = useEffectEvent(async () => {
         if (hasDeniedContactImportPrompt) {
@@ -47,6 +56,7 @@ function useContactPermissionModal({onDeny, onGrant, onFocusTextInput}: UseConta
             }
 
             const result = await showConfirmModal({
+                id: CONTACT_PERMISSION_MODAL_ID,
                 confirmText: translate('common.continue'),
                 cancelText: translate('common.noThanks'),
                 prompt: translate('contact.importContactsText'),
@@ -100,7 +110,9 @@ function useContactPermissionModal({onDeny, onGrant, onFocusTextInput}: UseConta
         runContactPermissionFlow();
 
         return () => {
+            // Set this before closing so the prompt's resolved promise returns early and does not record a denial.
             isMountedRef.current = false;
+            closeModalByIDRef.current(CONTACT_PERMISSION_MODAL_ID);
         };
     }, [hasDeniedContactImportPrompt, hasDeniedContactImportPromptMetadata.status]);
 }

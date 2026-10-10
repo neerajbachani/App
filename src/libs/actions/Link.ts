@@ -41,6 +41,7 @@ import Onyx from 'react-native-onyx';
 
 import {doneCheckingPublicRoom, navigateToConciergeChat, openReport} from './Report';
 import {canAnonymousUserAccessRoute, isAnonymousUser, signOutAndRedirectToSignIn, waitForUserSignIn} from './Session';
+import {clearPendingShareIntent, setPendingShareIntent} from './Share';
 import {setOnboardingErrorMessage} from './Welcome';
 
 let currentUserAccountID: number = CONST.DEFAULT_NUMBER_ID;
@@ -502,6 +503,12 @@ function openReportFromDeepLink(
         return;
     }
 
+    // A share opened while signed out is dropped once onboarding finishes (below). Remember it so the share flow
+    // can open on top of the normal post-onboarding landing instead of being lost.
+    if (!isAuthenticated && route === ROUTES.SHARE_ROOT) {
+        setPendingShareIntent();
+    }
+
     // Navigate to the report after sign-in/sign-up.
     waitForUserSignIn().then(() => {
         // A Submit-via-PDF secure access link must reach the report regardless of onboarding status: the report screen
@@ -613,6 +620,8 @@ function openReportFromDeepLink(
 
                             // If the last route is an RHP, we want to replace it so it won't be covered by the full-screen navigator.
                             const forceReplace = navigationRef.getRootState().routes.at(-1)?.name === NAVIGATORS.RIGHT_MODAL_NAVIGATOR;
+                            // The share is being honored now, so onboarding must not open it a second time.
+                            clearPendingShareIntent();
                             Navigation.navigate(deeplinkRoute, {forceReplace, waitForTransition: true});
                         };
                         // If we log with deeplink with reportID and data for this report is not available yet,

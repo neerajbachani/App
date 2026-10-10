@@ -10,6 +10,7 @@ import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 import Onyx from 'react-native-onyx';
 
 import {setDisableDismissOnEscape} from './actions/Modal';
+import {consumePendingShareIntent} from './actions/Share';
 import SidePanelActions from './actions/SidePanel';
 import {setOnboardingRHPVariant} from './actions/Welcome';
 import isReportTopmostSplitNavigator from './Navigation/helpers/isReportTopmostSplitNavigator';
@@ -74,6 +75,14 @@ function getReportIDAfterOnboarding(
     return undefined;
 }
 
+/** Opens a share that was captured before onboarding, on top of the landing screen that onboarding just chose. */
+function openPendingShareAfterLanding() {
+    if (!consumePendingShareIntent()) {
+        return;
+    }
+    Navigation.navigate(ROUTES.SHARE_ROOT, {waitForTransition: true});
+}
+
 function navigateAfterOnboarding(
     isSmallScreenWidth: boolean,
     canUseDefaultRooms: boolean | undefined,
@@ -100,16 +109,19 @@ function navigateAfterOnboarding(
         if (!isReportTopmostSplitNavigator()) {
             Navigation.navigate(ROUTES.HOME, navigationOptions);
         }
+        openPendingShareAfterLanding();
         return;
     }
 
     if (isSmallScreenWidth && variant === CONST.ONBOARDING_RHP_VARIANT.TRACK_EXPENSES_WITH_CONCIERGE) {
         Navigation.navigate(ROUTES.REPORT_WITH_ID.getRoute(conciergeReportID), navigationOptions);
+        openPendingShareAfterLanding();
         return;
     }
 
     if (shouldOpenRHPVariant(variantOverride)) {
         handleRHPVariantNavigation(onboardingPolicyID, variantOverride, navigationOptions);
+        openPendingShareAfterLanding();
         return;
     }
 
@@ -128,6 +140,7 @@ function navigateAfterOnboarding(
         // Navigate to home to trigger guard evaluation
         Navigation.navigate(ROUTES.HOME, navigationOptions);
     }
+    openPendingShareAfterLanding();
 }
 
 function navigateAfterOnboardingWithMicrotaskQueue(
@@ -164,12 +177,14 @@ function navigateToSubmitWorkspaceAfterOnboarding(policyID?: string, shouldUseNa
 
     if (!policyID) {
         Navigation.navigate(ROUTES.HOME);
+        openPendingShareAfterLanding();
         return;
     }
 
     setOnboardingRHPVariant(CONST.ONBOARDING_RHP_VARIANT.RHP_ADMINS_ROOM);
     Navigation.navigate(ROUTES.SEARCH_ROOT.getRoute({query: buildCannedSearchQuery({type: CONST.SEARCH.DATA_TYPES.EXPENSE}), searchKey: CONST.SEARCH.SEARCH_KEYS.EXPENSES}));
     SidePanelActions.openSidePanel(!shouldUseNarrowLayout);
+    openPendingShareAfterLanding();
 }
 
 function navigateToSubmitWorkspaceAfterOnboardingWithMicrotaskQueue(policyID?: string, shouldUseNarrowLayout = false) {

@@ -1,3 +1,5 @@
+import {registerSessionCleanupCallback} from '@libs/SessionCleanup';
+
 import ONYXKEYS from '@src/ONYXKEYS';
 import type {ShareTempFile} from '@src/types/onyx';
 import type {Participant} from '@src/types/onyx/IOU';
@@ -54,4 +56,27 @@ function clearUnknownUserDetails() {
     Onyx.merge(ONYXKEYS.SHARE_UNKNOWN_USER_DETAILS, null);
 }
 
-export {addTempShareFile, saveUnknownUserDetails, clearShareData, addValidatedShareFile, clearUnknownUserDetails};
+// A share captured while signed out. Onboarding drops the deep link on purpose, so this is what reopens the share
+// flow once onboarding has finished. In memory only: the native share payload does not survive a process restart.
+let pendingShareIntent = false;
+
+function setPendingShareIntent() {
+    pendingShareIntent = true;
+}
+
+/** Returns whether a share was waiting, and clears it so it cannot replay for a later account. */
+function consumePendingShareIntent(): boolean {
+    if (!pendingShareIntent) {
+        return false;
+    }
+    pendingShareIntent = false;
+    return true;
+}
+
+function clearPendingShareIntent() {
+    pendingShareIntent = false;
+}
+
+registerSessionCleanupCallback(clearPendingShareIntent);
+
+export {addTempShareFile, saveUnknownUserDetails, clearShareData, addValidatedShareFile, clearUnknownUserDetails, setPendingShareIntent, consumePendingShareIntent, clearPendingShareIntent};

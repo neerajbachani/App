@@ -97,13 +97,17 @@ function startOnboardingFlow(startOnboardingFlowParams: GetOnboardingInitialPath
 
     const onboardingPath = startOnboardingFlowParams.resumePath ?? getOnboardingInitialPath(startOnboardingFlowParams);
     const adaptedState = getAdaptedStateFromPath(onboardingPath as Route, undefined, false);
-    const rootStateRouteNamesSet = new Set(rootState.routes.map((route) => route.name));
+    // A cold-started share mounts ShareModalNavigator before onboarding. Drop it here so onboarding is the first
+    // thing the new user sees, and so dismissing onboarding cannot pop the share screen by mistake. The pending
+    // share intent reopens it after onboarding.
+    const routesWithoutShare = rootState.routes.filter((route) => route.name !== NAVIGATORS.SHARE_MODAL_NAVIGATOR);
+    const rootStateRouteNamesSet = new Set(routesWithoutShare.map((route) => route.name));
 
     navigationRef.resetRoot({
         ...rootState,
         ...adaptedState,
         stale: true,
-        routes: [...rootState.routes, ...(adaptedState?.routes.filter((route) => !rootStateRouteNamesSet.has(route.name)) ?? [])],
+        routes: [...routesWithoutShare, ...(adaptedState?.routes.filter((route) => !rootStateRouteNamesSet.has(route.name)) ?? [])],
     } as PartialState<NavigationState>);
 }
 
