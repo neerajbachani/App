@@ -59,6 +59,7 @@ function AttachmentModalContainer<Screen extends AttachmentModalScreenType>({con
             navigation={navigation}
             testID={`attachment-modal-${testID}`}
             enableEdgeToEdgeBottomSafeAreaPadding
+            shouldEnableKeyboardAvoidingView={false}
         >
             <AttachmentStateContextProvider>
                 <AttachmentModalBaseContent
