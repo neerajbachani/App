@@ -197,6 +197,7 @@ function PDFView({onToggleKeyboard, onLoadComplete, fileName, onPress, isFocused
                 {shouldRequestPassword && (
                     <KeyboardAvoidingView
                         behavior="padding"
+                        automaticOffset
                         style={themeStyles.flex1}
                     >
                         <PDFPasswordForm
