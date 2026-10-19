@@ -83,6 +83,14 @@ jest.mock('@hooks/useNetwork', () => ({
     default: () => ({isOffline: mockIsOffline.value}),
 }));
 
+// The carousel reads its own screen's route key to tell an in-place remount from a real exit.
+const mockRouteKey = {value: null as string | null};
+
+jest.mock('@hooks/useRouteKey', () => ({
+    __esModule: true,
+    default: () => mockRouteKey.value,
+}));
+
 // Only useIsFocused is overridden; findFocusedRoute is the real one, since the teardown assertions depend on it.
 jest.mock('@react-navigation/native', () => ({
     ...jest.requireActual<Record<string, unknown>>('@react-navigation/native'),
@@ -175,6 +183,7 @@ const resetMockState = () => {
     mockState.reportsCollection = {};
     mockGetRootState.mockReturnValue(makeRootState('testRoute'));
     mockIsOffline.value = false;
+    mockRouteKey.value = null;
 };
 
 const setupUseOnyx = () => {
@@ -723,6 +732,48 @@ describe('MoneyRequestReportTransactionsNavigation', () => {
 
         it('clears the active transaction IDs when unmounting onto an unrelated screen', () => {
             setFocusedRoute(SCREENS.SEARCH.ROOT);
+
+            renderNavigation().unmount();
+
+            expect(clearActiveTransactionIDs).toHaveBeenCalled();
+        });
+
+        // The expense route sits under the RHP while Test Tools is focused on top. An in-place remount
+        // (ReportNotFoundGuard swapping its wrapper) must not wipe the carousel while that route is still there.
+        const makeCoveredReportState = (reportRouteKey: string | undefined) => ({
+            index: 1,
+            routes: [
+                {
+                    key: 'right-modal',
+                    name: 'RightModalNavigator',
+                    state: {
+                        index: 0,
+                        routes: reportRouteKey ? [{key: reportRouteKey, name: SCREENS.RIGHT_MODAL.SEARCH_REPORT}] : [],
+                    },
+                },
+                {
+                    key: 'test-tools',
+                    name: 'TestToolsModalNavigator',
+                    state: {
+                        index: 0,
+                        routes: [{key: 'test-tools-root', name: SCREENS.TEST_TOOLS_MODAL.ROOT}],
+                    },
+                },
+            ],
+        });
+
+        it('keeps the active transaction IDs when the screen remounts under Test Tools', () => {
+            mockRouteKey.value = 'report-route-key';
+            mockGetRootState.mockReturnValue(makeCoveredReportState('report-route-key'));
+
+            renderNavigation().unmount();
+
+            expect(clearActiveTransactionIDs).not.toHaveBeenCalled();
+        });
+
+        it('clears the active transaction IDs when the expense route is gone and Test Tools is focused', () => {
+            mockRouteKey.value = 'report-route-key';
+            mockGetRootState.mockReturnValue(makeCoveredReportState(undefined));
 
             renderNavigation().unmount();
 

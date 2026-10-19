@@ -8,10 +8,12 @@ import useCurrentUserPersonalDetails from '@hooks/useCurrentUserPersonalDetails'
 import useLocalize from '@hooks/useLocalize';
 import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
+import useRouteKey from '@hooks/useRouteKey';
 import useThemeStyles from '@hooks/useThemeStyles';
 
 import {openReport, setOptimisticTransactionThread} from '@libs/actions/Report';
 import {clearActiveTransactionIDs} from '@libs/actions/TransactionThreadNavigation';
+import extractNavigationKeys from '@libs/Navigation/helpers/extractNavigationKeys';
 import type {RightModalNavigatorParamList} from '@libs/Navigation/types';
 import {getExpenseCreationTransactionID} from '@libs/ReportActionsUtils';
 import {findSelfDMReportID, isOneTransactionReport} from '@libs/ReportUtils';
@@ -98,6 +100,8 @@ function MoneyRequestReportTransactionsNavigation({currentTransactionID, isFromR
 
     const {isOffline} = useNetwork();
     const isFocused = useIsFocused();
+    // The screen that hosts this carousel. An in-place remount keeps this key in the navigation state.
+    const routeKey = useRouteKey();
 
     const currentTransactionIndex = transactionIDsList.findIndex((id) => id === currentTransactionID);
 
@@ -208,13 +212,19 @@ function MoneyRequestReportTransactionsNavigation({currentTransactionID, isFromR
      */
     useEffect(() => {
         return () => {
-            const focusedRoute = findFocusedRoute(navigationRef.getRootState());
+            const rootState = navigationRef.getRootState();
+            // An in-place remount (ReportNotFoundGuard swapping its wrapper while a screen covers this one)
+            // leaves this route in the stack, so the list still belongs to the expense on screen.
+            if (routeKey && extractNavigationKeys(rootState?.routes).has(routeKey)) {
+                return;
+            }
+            const focusedRoute = findFocusedRoute(rootState);
             if (focusedRoute?.name && (CAROUSEL_PRESERVING_SCREENS as readonly string[]).includes(focusedRoute.name)) {
                 return;
             }
             clearActiveTransactionIDs();
         };
-    }, []);
+    }, [routeKey]);
 
     const stageSiblingPress = (transactionID: string | undefined, parentReportID: string | undefined) => {
         // Offline there is no fetch to wait for, so the caller resolves the sibling with what it already has.
