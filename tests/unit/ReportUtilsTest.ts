@@ -7411,7 +7411,7 @@ describe('ReportUtils', () => {
 
     describe('shouldDisplayThreadReplies', () => {
         it.each([
-            [CONST.REPORT.TYPE.SUPPORT_TICKET, false],
+            [CONST.REPORT.TYPE.SUPPORT_TICKET, true],
             [CONST.REPORT.TYPE.CHAT, true],
             [CONST.REPORT.TYPE.TASK, true],
         ] as const)('child report type %s shows the replies footer: %s', (childType, expected) => {
@@ -7427,8 +7427,25 @@ describe('ReportUtils', () => {
             // When the parent action is displayed in its original conversation
             const shouldShowReplies = shouldDisplayThreadReplies(reportAction, false);
 
-            // Then support-ticket previews omit the footer, while other threads keep it
+            // Then support-ticket previews show the footer, the same as other threads
             expect(shouldShowReplies).toBe(expected);
+        });
+
+        it('hides the replies footer for a support ticket parent shown inside its own thread', () => {
+            // Given a support ticket creation action whose ticket already has replies
+            const reportAction: ReportAction = {
+                ...createRandomReportAction(89019),
+                actionName: CONST.REPORT.ACTIONS.TYPE.ADD_COMMENT,
+                childType: CONST.REPORT.TYPE.SUPPORT_TICKET,
+                childVisibleActionCount: 5,
+                childCommenterCount: 2,
+            };
+
+            // When that action is the parent pinned at the top of the ticket thread
+            const shouldShowReplies = shouldDisplayThreadReplies(reportAction, true);
+
+            // Then the footer stays hidden, because the user is already inside the ticket
+            expect(shouldShowReplies).toBe(false);
         });
     });
 
