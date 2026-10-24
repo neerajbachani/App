@@ -63,6 +63,36 @@ function InsightsSectionContent() {
             isInsightsPageEnabled ? ROUTES.INSIGHTS.getRoute(CONST.INSIGHTS.DASHBOARD.SPEND) : ROUTES.SEARCH_ROOT.getRoute({query: config.searchQuery, searchKey: config.key}),
         );
 
+    const shouldNavigateToInsightsOnChartPress = isInsightsPageEnabled && !canUseTouchScreen();
+    const onChartItemPress = shouldNavigateToInsightsOnChartPress ? () => navigateToInsights() : undefined;
+
+    const chartView = (
+        <SearchChartView
+            queryJSON={queryJSON}
+            view={view}
+            groupBy={groupBy}
+            data={data}
+            isLoading={state === INSIGHTS_CHART_STATE.LOADING}
+            shouldShowSinglePointAsBar={isInsightsPageEnabled}
+            shouldUseResponsiveLabels
+            shouldDrillDownOnPress={!isInsightsPageEnabled}
+            onChartItemPress={onChartItemPress}
+        />
+    );
+
+    const chartContent =
+        shouldNavigateToInsightsOnChartPress && view !== CONST.SEARCH.VIEW.PIE ? (
+            <PressableWithoutFeedback
+                accessible={false}
+                onPress={navigateToInsights}
+                sentryLabel={CONST.SENTRY_LABEL.HOME_PAGE.WIDGET_ITEM}
+            >
+                {chartView}
+            </PressableWithoutFeedback>
+        ) : (
+            chartView
+        );
+
     const widget = (
         <WidgetContainer
             titleContent={
@@ -93,35 +123,12 @@ function InsightsSectionContent() {
             {state === INSIGHTS_CHART_STATE.EMPTY && <ChartEmptyState testID="insightsSectionEmptyState" />}
             {state === INSIGHTS_CHART_STATE.ERROR && <ChartErrorState onRetry={retry} />}
             {(state === INSIGHTS_CHART_STATE.LOADING || state === INSIGHTS_CHART_STATE.READY) && (
-                <View style={[cardPaddingHorizontal, cardPaddingBottom, !shouldUseNarrowLayout && styles.pt3]}>
-                    <SearchChartView
-                        queryJSON={queryJSON}
-                        view={view}
-                        groupBy={groupBy}
-                        data={data}
-                        isLoading={state === INSIGHTS_CHART_STATE.LOADING}
-                        shouldShowSinglePointAsBar={isInsightsPageEnabled}
-                        shouldUseResponsiveLabels
-                        shouldDrillDownOnPress={!isInsightsPageEnabled}
-                    />
-                </View>
+                <View style={[cardPaddingHorizontal, cardPaddingBottom, !shouldUseNarrowLayout && styles.pt3]}>{chartContent}</View>
             )}
         </WidgetContainer>
     );
 
-    if (!isInsightsPageEnabled || canUseTouchScreen()) {
-        return widget;
-    }
-
-    return (
-        <PressableWithoutFeedback
-            accessible={false}
-            onPress={navigateToInsights}
-            sentryLabel={CONST.SENTRY_LABEL.HOME_PAGE.WIDGET_ITEM}
-        >
-            {widget}
-        </PressableWithoutFeedback>
-    );
+    return widget;
 }
 
 export default InsightsSectionContent;

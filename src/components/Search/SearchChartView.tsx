@@ -52,6 +52,9 @@ type SearchChartViewProps = {
     /** Whether pressing a bar, point or slice opens Search filtered to it */
     shouldDrillDownOnPress?: boolean;
 
+    /** Called when a bar, point, or slice is pressed while drill-down is disabled */
+    onChartItemPress?: (dataPoint: ChartDataPoint, index: number) => void;
+
     /** Whether a line chart with a single point is drawn as a bar */
     shouldShowSinglePointAsBar?: boolean;
 
@@ -78,6 +81,7 @@ function SearchChartView({
     shouldShowGroupLabels = true,
     shouldUseResponsiveLabels = false,
     shouldDrillDownOnPress = true,
+    onChartItemPress,
     shouldShowSinglePointAsBar = false,
     comparison,
     renderDetails,
@@ -135,7 +139,7 @@ function SearchChartView({
         Navigation.navigate(ROUTES.SEARCH_ROOT.getRoute({query, searchKey: currentSearchKey}));
     };
 
-    const onItemPress = shouldDrillDownOnPress ? handleItemPress : undefined;
+    const onItemPress = shouldDrillDownOnPress ? handleItemPress : onChartItemPress;
 
     const firstItem = data.at(0);
     const currency = sanitizeCurrencyCode(firstItem?.currency ?? CONST.CURRENCY.USD);
