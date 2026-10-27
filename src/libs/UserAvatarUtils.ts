@@ -247,6 +247,16 @@ function isGeneratedLetterAvatarURL(avatarSource?: AvatarSource): boolean {
 }
 
 /**
+ * A photo the user uploaded, as opposed to a letter, catalog, or default avatar.
+ * Those are the URLs the backend stores at a fixed CloudFront key.
+ */
+function isUserUploadedAvatarURL(avatarSource?: AvatarSource): avatarSource is string {
+    return (
+        typeof avatarSource === 'string' && avatarSource.startsWith('http') && !isDefaultAvatar(avatarSource) && !isCatalogAvatar(avatarSource) && !isGeneratedLetterAvatarURL(avatarSource)
+    );
+}
+
+/**
  * Returns the first alphanumeric character of a string uppercased, folding Latin accented letters
  * to their ASCII base letter, or '' when the string yields no initial.
  *
@@ -572,6 +582,7 @@ export {
     isCatalogAvatar,
     isDefaultAvatar,
     isGeneratedLetterAvatarURL,
+    isUserUploadedAvatarURL,
     isLetterAvatar,
     optimizeAvatarSource,
 };

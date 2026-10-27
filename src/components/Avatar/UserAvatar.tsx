@@ -1,12 +1,15 @@
 import useDefaultAvatars from '@hooks/useDefaultAvatars';
+import useOnyx from '@hooks/useOnyx';
 import useStyleUtils from '@hooks/useStyleUtils';
 import useTheme from '@hooks/useTheme';
 
 import type {AvatarSource} from '@libs/UserAvatarUtils';
-import {getAvatar, optimizeAvatarSource, parseLetterAvatarURL} from '@libs/UserAvatarUtils';
+import {getAvatar, isUserUploadedAvatarURL, optimizeAvatarSource, parseLetterAvatarURL} from '@libs/UserAvatarUtils';
 
 import CONST from '@src/CONST';
+import ONYXKEYS from '@src/ONYXKEYS';
 
+import {accountIDSelector} from '@selectors/Session';
 import React from 'react';
 
 import type {AvatarCommonProps} from './types';
@@ -44,6 +47,8 @@ function UserAvatar({
     const theme = useTheme();
     const StyleUtils = useStyleUtils();
     const {hasImageError, onImageError} = useAvatarLoadError(source);
+    const [currentUserAccountID] = useOnyx(ONYXKEYS.SESSION, {selector: accountIDSelector});
+    const [uploadedAvatarCacheVersion] = useOnyx(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION);
 
     const resolvedSource = getAvatar({avatarSource: source, accountID, defaultAvatars});
 
@@ -75,6 +80,11 @@ function UserAvatar({
     const avatarSource = useFallBackAvatar ? fallbackAvatar : (optimizedSource ?? fallbackAvatar);
 
     if (typeof avatarSource === 'string') {
+        // The backend reuses one URL per account. A version recorded after this device's own upload
+        // makes expo-image miss the bitmap it cached for that URL. Other accounts keep the URL key.
+        const uploadedAvatarCacheKey =
+            currentUserAccountID === accountID && uploadedAvatarCacheVersion != null && isUserUploadedAvatarURL(avatarSource) ? `${avatarSource}#${uploadedAvatarCacheVersion}` : undefined;
+
         return (
             <AvatarContainer
                 containerStyles={containerStyles}
@@ -82,6 +92,7 @@ function UserAvatar({
             >
                 <AvatarImage
                     avatarSource={avatarSource}
+                    cacheKey={uploadedAvatarCacheKey}
                     size={size}
                     shape={CONST.AVATAR_SHAPE.CIRCLE}
                     imageStyles={imageStyles}

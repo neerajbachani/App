@@ -393,7 +393,7 @@ function updateAvatar(
             },
         }),
     ];
-    const successData: PersonalDetailsUtils.PersonalDetailsOnyxUpdate[] = [
+    const successData: Array<PersonalDetailsUtils.PersonalDetailsOnyxUpdate | OnyxUpdate<typeof ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION>> = [
         PersonalDetailsUtils.buildPersonalDetailsUpdate({
             [currentUserPersonalDetails.accountID]: {
                 pendingFields: {
@@ -402,6 +402,14 @@ function updateAvatar(
             },
         }),
     ];
+    // Preset catalog avatars have their own URL, so they do not need a cache-key bump.
+    if (!isDefaultAvatarResult(file)) {
+        successData.push({
+            onyxMethod: Onyx.METHOD.SET,
+            key: ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION,
+            value: Date.now(),
+        });
+    }
     const failureData: PersonalDetailsUtils.PersonalDetailsOnyxUpdate[] = [
         PersonalDetailsUtils.buildPersonalDetailsUpdate({
             [currentUserPersonalDetails.accountID]: {

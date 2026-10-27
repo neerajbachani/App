@@ -592,6 +592,20 @@ describe('actions/PersonalDetails', () => {
     });
 
     describe('updateAvatar', () => {
+        const uploadedAvatarCacheVersion = 1_700_000_000_000;
+
+        beforeEach(() => {
+            jest.spyOn(Date, 'now').mockReturnValue(uploadedAvatarCacheVersion);
+        });
+
+        function uploadedAvatarCacheVersionUpdate() {
+            return {
+                onyxMethod: Onyx.METHOD.SET,
+                key: ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION,
+                value: uploadedAvatarCacheVersion,
+            };
+        }
+
         it('should call API.write with correct parameters and optimistic data for File', async () => {
             const mockFile = createMock<File>({
                 uri: 'file://test-avatar.jpg',
@@ -645,6 +659,7 @@ describe('actions/PersonalDetails', () => {
                                 },
                             },
                         },
+                        uploadedAvatarCacheVersionUpdate(),
                     ],
                     failureData: [
                         {
@@ -721,6 +736,7 @@ describe('actions/PersonalDetails', () => {
                                 },
                             },
                         },
+                        uploadedAvatarCacheVersionUpdate(),
                     ],
                     failureData: [
                         {

@@ -1,4 +1,4 @@
-import {render, screen} from '@testing-library/react-native';
+import {act, render, screen} from '@testing-library/react-native';
 
 import AvatarFromIcon from '@components/Avatar/AvatarFromIcon';
 import UserAvatar from '@components/Avatar/UserAvatar';
@@ -13,12 +13,14 @@ import {USER_AVATARS} from '@libs/Avatars/UserAvatarCatalog';
 import {getDefaultWorkspaceAvatarTestID} from '@libs/ReportUtils';
 
 import CONST from '@src/CONST';
+import ONYXKEYS from '@src/ONYXKEYS';
 import createThemeStyles from '@src/styles';
 import {defaultTheme} from '@src/styles/theme';
 import createStyleUtils from '@src/styles/utils';
 
 import React from 'react';
 import {View} from 'react-native';
+import Onyx from 'react-native-onyx';
 
 import waitForBatchedUpdates from '../utils/waitForBatchedUpdates';
 
@@ -44,11 +46,12 @@ const mockImageErrorHandlerRef: {current?: () => void} = {current: undefined};
 
 // Renders a bare React Native <View> as a stand-in for a mocked component. Prefixed with
 // `mock` so the hoisted jest.mock factories below are allowed to reference it.
-function mockRenderView({testID, accessibilityLabel}: {testID?: string; accessibilityLabel?: string}) {
+function mockRenderView({testID, accessibilityLabel, accessibilityHint}: {testID?: string; accessibilityLabel?: string; accessibilityHint?: string}) {
     return (
         <View
             testID={testID}
             accessibilityLabel={accessibilityLabel}
+            accessibilityHint={accessibilityHint}
         />
     );
 }
@@ -70,9 +73,9 @@ jest.mock('@hooks/useLazyAsset', () => {
 jest.mock('@hooks/useNetwork', () => jest.fn(() => ({isOffline: false})));
 
 jest.mock('@components/Image', () => {
-    function MockImage({source, onError}: {source?: {uri?: string}; onError?: () => void}) {
+    function MockImage({source, onError}: {source?: {uri?: string; cacheKey?: string}; onError?: () => void}) {
         mockImageErrorHandlerRef.current = onError;
-        return mockRenderView({testID: 'AvatarImage', accessibilityLabel: source?.uri});
+        return mockRenderView({testID: 'AvatarImage', accessibilityLabel: source?.uri, accessibilityHint: source?.cacheKey});
     }
 
     return {__esModule: true, default: MockImage};
@@ -115,6 +118,12 @@ describe('Avatar', () => {
     });
 
     describe('user avatar', () => {
+        afterEach(async () => {
+            await act(async () => {
+                await Onyx.set(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION, null);
+            });
+        });
+
         it('renders the Image branch for an uploaded URL source', async () => {
             renderUserAvatar({
                 source: UPLOADED_AVATAR_URL,
@@ -251,6 +260,63 @@ describe('Avatar', () => {
             expect(screen.getByText(LETTER_AVATAR_INITIALS, hiddenElementOptions)).toBeTruthy();
             expect(screen.queryByTestId(AVATAR_IMAGE_TEST_ID)).toBeNull();
             expect(queryHiddenTestId(FALLBACK_ICON_TEST_ID)).toBeNull();
+        });
+
+        it('passes a cache key for the current user uploaded avatar when a version is stored', async () => {
+            const cacheVersion = 42;
+            await Onyx.merge(ONYXKEYS.SESSION, {accountID: 1});
+            await Onyx.set(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION, cacheVersion);
+
+            renderUserAvatar({
+                source: UPLOADED_AVATAR_URL,
+                accountID: 1,
+            });
+
+            await waitForBatchedUpdates();
+
+            expect(screen.getByTestId(AVATAR_IMAGE_TEST_ID).props.accessibilityHint).toBe(`${UPLOADED_AVATAR_URL}#${cacheVersion}`);
+        });
+
+        it('passes no cache key for another account', async () => {
+            await Onyx.merge(ONYXKEYS.SESSION, {accountID: 1});
+            await Onyx.set(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION, 42);
+
+            renderUserAvatar({
+                source: UPLOADED_AVATAR_URL,
+                accountID: 2,
+            });
+
+            await waitForBatchedUpdates();
+
+            expect(screen.getByTestId(AVATAR_IMAGE_TEST_ID).props.accessibilityHint).toBeUndefined();
+        });
+
+        it('draws a letter avatar instead of a cached image when a version is stored', async () => {
+            await Onyx.merge(ONYXKEYS.SESSION, {accountID: 1});
+            await Onyx.set(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION, 42);
+
+            renderUserAvatar({
+                source: LETTER_AVATAR_URL,
+                accountID: 1,
+            });
+
+            await waitForBatchedUpdates();
+
+            expect(screen.queryByTestId(AVATAR_IMAGE_TEST_ID)).toBeNull();
+        });
+
+        it('passes no cache key when no version is stored', async () => {
+            await Onyx.merge(ONYXKEYS.SESSION, {accountID: 1});
+            await Onyx.set(ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION, null);
+
+            renderUserAvatar({
+                source: UPLOADED_AVATAR_URL,
+                accountID: 1,
+            });
+
+            await waitForBatchedUpdates();
+
+            expect(screen.getByTestId(AVATAR_IMAGE_TEST_ID).props.accessibilityHint).toBeUndefined();
         });
 
         it('renders locally drawn initials for the small-size (_128) letter-avatar URL variant', async () => {

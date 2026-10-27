@@ -130,6 +130,13 @@ const ONYXKEYS = {
     /** Cropped image the avatar crop screen writes back for its opener */
     AVATAR_CROP_RESULT: 'avatarCropResult',
 
+    /**
+     * Local-only counter for the current user's uploaded photo.
+     * The backend reuses one CloudFront URL per account, and expo-image caches by that URL.
+     * Bumping this after a successful upload gives the uploading device a new cache key.
+     */
+    UPLOADED_AVATAR_CACHE_VERSION: 'uploadedAvatarCacheVersion',
+
     /** Template picked in the "New agent" screen, consumed by the custom-agent builder to pre-fill its fields */
     NEW_AGENT_TEMPLATE: 'newAgentTemplate',
 
@@ -1779,6 +1786,7 @@ type OnyxValuesMapping = {
     [ONYXKEYS.ODOMETER_DRAFT]: OnyxTypes.OdometerDraft;
     [ONYXKEYS.AVATAR_CROP_DRAFT]: OnyxTypes.AvatarCropDraft;
     [ONYXKEYS.AVATAR_CROP_RESULT]: OnyxTypes.AvatarCropResult;
+    [ONYXKEYS.UPLOADED_AVATAR_CACHE_VERSION]: number;
     [ONYXKEYS.NEW_AGENT_TEMPLATE]: OnyxTypes.NewAgentTemplate;
     [ONYXKEYS.FULLSCREEN_VISIBILITY]: boolean;
     [ONYXKEYS.NETWORK]: OnyxTypes.Network;
