@@ -14,12 +14,12 @@ import UnreadActionIndicator from '@components/UnreadActionIndicator';
 
 import useConfirmModal from '@hooks/useConfirmModal';
 import {useCurrencyListActions} from '@hooks/useCurrencyList';
+import useCurrentUserPersonalDetails from '@hooks/useCurrentUserPersonalDetails';
 import useLocalize from '@hooks/useLocalize';
 import useNetwork from '@hooks/useNetwork';
 import useOnyx from '@hooks/useOnyx';
 import useOriginalReportID from '@hooks/useOriginalReportID';
 import {usePersonalDetail} from '@hooks/usePersonalDetails';
-import useReportsParentHierarchy from '@hooks/useReportsParentHierarchy';
 import useReportTransactionsCollection from '@hooks/useReportTransactionsCollection';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
 import useStyleUtils from '@hooks/useStyleUtils';
@@ -51,8 +51,6 @@ import {
     isActionOfType,
     isCreatedTaskReportAction,
     isDeletedParentAction as isDeletedParentActionUtils,
-    isDeletedReportPreviewWithError,
-    getVisibleReportActionErrors,
     isMessageDeleted,
     isMoneyRequestAction,
     isPendingRemove,
@@ -74,6 +72,7 @@ import {ReactionListContext} from '@pages/inbox/ReactionListContext';
 import AttachmentModalContext from '@pages/media/AttachmentModalScreen/AttachmentModalContext';
 
 import {clearAllRelatedReportActionErrors} from '@userActions/ClearReportActionErrors';
+import type {ReportHierarchyInfo} from '@userActions/ClearReportActionErrors';
 import {hideEmojiPicker, isActive} from '@userActions/EmojiPickerAction';
 import {expandURLPreview} from '@userActions/Report';
 import {clearErrorWithOriginalTransactionError} from '@userActions/Transaction';
@@ -88,18 +87,18 @@ import type * as OnyxTypes from '@src/types/onyx';
 import type {Errors} from '@src/types/onyx/OnyxCommon';
 import {isEmptyObject, isEmptyValueObject} from '@src/types/utils/EmptyObject';
 
-import type {GestureResponderEvent, TextInput} from 'react-native';
-import type {OnyxEntry} from 'react-native-onyx';
+import type {ComponentRef} from 'react';
+import type {GestureResponderEvent} from 'react-native';
+import type {OnyxCollection, OnyxEntry} from 'react-native-onyx';
 
 import {useNavigation} from '@react-navigation/native';
 import {isTrackIntentUserSelector} from '@selectors/Onboarding';
 import {displayNameOrDefaultSelector} from '@selectors/PersonalDetails';
+import {agentZeroProcessingAgentIDsSelector} from '@selectors/ReportNameValuePairs';
 import {deepEqual} from 'fast-equals';
 import mapValues from 'lodash/mapValues';
-import React, {useContext, useEffect, useRef, useState} from 'react';
+import React, {useContext, useEffect, useRef} from 'react';
 import {Keyboard, View} from 'react-native';
-
-import type {ContextMenuAnchor} from './ContextMenu/ReportActionContextMenu';
 
 import ActionContentRouter from './actionContents/ActionContentRouter';
 import {RestrictedReadOnlyContextMenuActions} from './ContextMenu/ContextMenuActions';
@@ -107,11 +106,13 @@ import MiniReportActionContextMenu from './ContextMenu/MiniReportActionContextMe
 import {hideContextMenu, hideDeleteModal, isActiveReportAction, showContextMenu} from './ContextMenu/ReportActionContextMenu';
 import LinkPreviewer from './LinkPreviewer';
 import {useReportActionActiveEdit} from './ReportActionEditMessageContext';
+import {useReportActionItemState} from './ReportActionIndexContext';
 import ReportActionItemContentCreated from './ReportActionItemContentCreated';
 import ReportActionItemFrame from './ReportActionItemFrame';
 import ReportActionItemThread from './ReportActionItemThread';
 import SearchActionHeader from './SearchActionHeader';
 import TripSummary from './TripSummary';
+import useExpandedSystemMessageFocus from './useExpandedSystemMessageFocus';
 import useShouldEditInComposer from './useShouldEditInComposer';
 import WhisperBanner from './WhisperBanner';
 
@@ -154,7 +155,7 @@ type ReportActionItemProps = {
     shouldUseThreadDividerLine?: boolean;
     shouldDisplayContextMenu?: boolean;
 
-    /** Whether this is the newest Concierge comment eligible for the inline feedback prompt */
+    /** Whether this is the newest comment of Concierge or of a custom agent that is eligible for the inline feedback prompt */
     isLatestConciergeFeedbackAction?: boolean;
 
     linkedTransactionRouteError?: Errors;
@@ -167,6 +168,12 @@ type ReportActionItemProps = {
 
     /** Whether the action is the "Created" action of a harvest-created expense report */
     isHarvestCreatedExpenseReport?: boolean;
+
+    /** Parent links of the report and its ancestors, used to clear related errors on dismiss */
+    reportsParentHierarchy: OnyxCollection<ReportHierarchyInfo>;
+
+    /** Consumes an explicit expansion's focus request after this message has laid out. */
+    onExpandedSystemMessageReady?: (target: ComponentRef<typeof View> | null) => void;
 };
 
 function ReportActionItem({
@@ -190,11 +197,13 @@ function ReportActionItem({
     shouldShowBorder,
     shouldHighlight = false,
     isHarvestCreatedExpenseReport = false,
+    reportsParentHierarchy,
+    onExpandedSystemMessageReady,
 }: ReportActionItemProps) {
     const reportID = report?.reportID ?? action?.reportID;
+    const {accountID: currentUserAccountID} = useCurrentUserPersonalDetails();
     const originalReportID = useOriginalReportID(report?.reportID, action);
     const {isOffline} = useNetwork();
-    const reportsParentHierarchy = useReportsParentHierarchy();
     const [iouReport] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT}${getIOUReportIDFromReportActionPreview(action)}`, {selector: getStableReportSelector});
     const [iouPolicy] = useOnyx(`${ONYXKEYS.COLLECTION.POLICY}${iouReport?.policyID}`);
 
@@ -219,6 +228,13 @@ function ReportActionItem({
     const [originalTransactionID] = useOnyx(`${ONYXKEYS.COLLECTION.TRANSACTION}${transactionID}`, {selector: originalTransactionIDSelector});
     const [isOriginalTransactionSplitContainer] = useOnyx(`${ONYXKEYS.COLLECTION.TRANSACTION}${originalTransactionID}`, {selector: isSplitContainerTransactionSelector});
 
+    // While an agent (e.g. Concierge) is still replying in the thread, the thread has no persisted actions yet, so the
+    // server can return zeroed reply counts. Use the thread's processing indicator to keep the thread row visible.
+    const [threadProcessingAgentIDs] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT_NAME_VALUE_PAIRS}${getNonEmptyStringOnyxID(action.childReportID)}`, {
+        selector: agentZeroProcessingAgentIDsSelector,
+    });
+    const isAgentProcessingInThread = !isOffline && !!action.childReportID && (threadProcessingAgentIDs?.length ?? 0) > 0;
+
     const {editingMessage, editingReportAction} = useReportActionActiveEdit();
 
     const isConciergeGreeting = action.reportActionID === CONST.CONCIERGE_GREETING_ACTION_ID;
@@ -233,16 +249,18 @@ function ReportActionItem({
     const theme = useTheme();
     const styles = useThemeStyles();
     const StyleUtils = useStyleUtils();
-    const [isContextMenuActive, setIsContextMenuActive] = useState(() => isActiveReportAction(action.reportActionID));
-    const [isEmojiPickerActive, setIsEmojiPickerActive] = useState<boolean | undefined>();
-    const [isPaymentMethodPopoverActive, setIsPaymentMethodPopoverActive] = useState<boolean | undefined>();
-    const [isHidden, setIsHidden] = useState(false);
+    const [isContextMenuActive, setIsContextMenuActive] = useReportActionItemState(() => isActiveReportAction(action.reportActionID));
+    const [isEmojiPickerActive, setIsEmojiPickerActive] = useReportActionItemState<boolean | undefined>(undefined);
+    const [isPaymentMethodPopoverActive, setIsPaymentMethodPopoverActive] = useReportActionItemState<boolean | undefined>(undefined);
+    const [isHidden, setIsHidden] = useReportActionItemState(false);
     const {isActiveReportAction: isActiveReactionListReportAction, hideReactionList} = useContext(ReactionListContext);
     const {updateHiddenAttachments} = useContext(AttachmentModalContext);
-    const popoverAnchorRef = useRef<Exclude<ContextMenuAnchor, TextInput>>(null);
-    const downloadedPreviews = useRef<string[]>([]);
+    const popoverAnchorRef = useRef<ComponentRef<typeof View>>(null);
+
+    useExpandedSystemMessageFocus(action.reportActionID, popoverAnchorRef, onExpandedSystemMessageReady);
+    const downloadedPreviews = useRef<{reportActionID: string; urls: string[]}>({reportActionID: action.reportActionID, urls: []});
     const isReportActionLinked = linkedReportActionID && action.reportActionID && linkedReportActionID === action.reportActionID;
-    const [isReportActionActive, setIsReportActionActive] = useState(!!isReportActionLinked);
+    const [isReportActionActive, setIsReportActionActive] = useReportActionItemState(!!isReportActionLinked);
 
     const shouldBreakGrouping = shouldBreakAccessibilityGrouping();
     const isScreenReaderActive = Accessibility.useScreenReaderStatus();
@@ -257,6 +275,8 @@ function ReportActionItem({
 
     // IOUDetails only exists when we are sending money
     const isSendingMoney = isMoneyRequestAction(action) && getOriginalMessage(action)?.type === CONST.IOU.REPORT_ACTION_TYPE.PAY && getOriginalMessage(action)?.IOUDetails;
+
+    const [sendMoneyChatReportActions] = useOnyx(`${ONYXKEYS.COLLECTION.REPORT_ACTIONS}${getNonEmptyStringOnyxID(report?.chatReportID)}`);
 
     const updateHiddenState = (isHiddenValue: boolean) => {
         setIsHidden(isHiddenValue);
@@ -276,6 +296,7 @@ function ReportActionItem({
         if (isSendingMoney && transactionIDToDismiss && reportID) {
             cleanUpMoneyRequest({
                 transactionID: transactionIDToDismiss,
+                currentUserAccountID,
                 reportAction: action,
                 reportID,
                 transactionThreadReport,
@@ -288,6 +309,7 @@ function ReportActionItem({
                 isOffline,
                 isSingleTransactionView: true,
                 policy: iouPolicy,
+                chatReportActions: sendMoneyChatReportActions,
             });
             return;
         }
@@ -360,11 +382,14 @@ function ReportActionItem({
         }
 
         const urls = extractLinksFromMessageHtml(action);
-        if (deepEqual(downloadedPreviews.current, urls) || action.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE) {
+        if (
+            (downloadedPreviews.current.reportActionID === action.reportActionID && deepEqual(downloadedPreviews.current.urls, urls)) ||
+            action.pendingAction === CONST.RED_BRICK_ROAD_PENDING_ACTION.DELETE
+        ) {
             return;
         }
 
-        downloadedPreviews.current = urls;
+        downloadedPreviews.current = {reportActionID: action.reportActionID, urls};
         expandURLPreview(reportID, action.reportActionID);
     }, [action, reportID]);
 
@@ -387,7 +412,7 @@ function ReportActionItem({
             return;
         }
         setIsHidden(false);
-    }, [latestDecision, action]);
+    }, [latestDecision, action, setIsHidden]);
 
     const toggleContextMenuFromActiveReportAction = () => {
         setIsContextMenuActive(isActiveReportAction(action.reportActionID));
@@ -414,24 +439,12 @@ function ReportActionItem({
 
     const disabledActions = !canWriteInReport(report) ? RestrictedReadOnlyContextMenuActions : [];
 
-    // An error the payer cannot see must not disable the action, or the preview loses its context menu for no visible reason.
-    const visibleActionErrors = getVisibleReportActionErrors(action);
-
-    const hasActionErrors = !isEmptyValueObject(visibleActionErrors);
+    const hasActionErrors = !isEmptyValueObject(action.errors);
 
     // Receipt upload errors should still allow the context menu so the user can access "Delete expense"
-    const hasOnlyReceiptErrors = hasActionErrors && Object.values(visibleActionErrors ?? {}).every((error) => error === null || isReceiptError(error));
+    const hasOnlyReceiptErrors = hasActionErrors && Object.values(action.errors ?? {}).every((error) => error === null || isReceiptError(error));
 
     const isContextMenuDisabled = hasDraft || (hasActionErrors && !hasOnlyReceiptErrors) || !shouldDisplayContextMenuValue;
-
-    const latestActionErrors = getLatestErrorMessageField({...action, errors: visibleActionErrors} as OnyxDataWithErrors);
-
-    // Once the report is deleted there is nothing to retry, so say what happened instead of "try again later".
-    let displayedActionErrors = latestActionErrors;
-    if (isDeletedReportPreviewWithError(action)) {
-        const payFailedMessage = translate('iou.error.payFailedExpenseDeleted');
-        displayedActionErrors = mapValues(latestActionErrors, () => payFailedMessage);
-    }
 
     /**
      * Show the ReportActionContextMenu modal popover.
@@ -537,9 +550,9 @@ function ReportActionItem({
     const iouReportID = isMoneyRequestAction(action) ? action?.reportID : undefined;
     const isWhisper = whisperedTo.length > 0 && getTransactionsWithReceipts(iouReportID).length === 0;
 
-    const isClosedExpenseReportWithNoExpenses = isClosedExpenseReportWithNoExpensesUtils(iouReport, transactionsOnIOUReport);
+    const isClosedExpenseReportWithNoExpenses = isClosedExpenseReportWithNoExpensesUtils(iouReport, !isEmptyObject(transactionsOnIOUReport));
     const isEmpty = !shouldRenderViewBasedOnAction && !isClosedExpenseReportWithNoExpenses;
-    const shouldDisplayThreadReplies = shouldDisplayThreadRepliesUtils(action, isThreadReportParentAction) && !isOnSearch;
+    const shouldDisplayThreadReplies = shouldDisplayThreadRepliesUtils(action, isThreadReportParentAction, isAgentProcessingInThread) && !isOnSearch;
 
     const formattedTimestamp = datetimeToCalendarTime(action.created, false);
     const plainMessage = isActionOfType(action, CONST.REPORT.ACTIONS.TYPE.AGENT_PROMPT_UPDATED)
@@ -580,6 +593,7 @@ function ReportActionItem({
                         accessibilityLabel={accessibilityLabel}
                         accessibilityHint={translate('accessibilityHints.chatMessage')}
                         accessibilityRole={isSafari() && hasHoverSupport() ? undefined : CONST.ROLE.BUTTON}
+                        shouldAllowTextSelection={hasHoverSupport()}
                         sentryLabel={CONST.SENTRY_LABEL.REPORT.REPORT_ACTION_ITEM}
                     >
                         <Hoverable
@@ -633,8 +647,8 @@ function ReportActionItem({
                                                     hasDraft ? undefined : (action.pendingAction ?? (action.isOptimisticAction ? CONST.RED_BRICK_ROAD_PENDING_ACTION.ADD : undefined))
                                                 }
                                                 shouldHideOnDelete={!isDeletedParentAction}
-                                                errors={(linkedTransactionRouteError ?? !isOnSearch) ? displayedActionErrors : {}}
-                                                errorRowStyles={[styles.ml10, styles.mr2]}
+                                                errors={(linkedTransactionRouteError ?? !isOnSearch) ? getLatestErrorMessageField(action as OnyxDataWithErrors) : {}}
+                                                errorRowStyles={styles.ml10}
                                                 needsOffscreenAlphaCompositing={isMoneyRequestAction(action)}
                                                 shouldDisableStrikeThrough
                                             >
@@ -703,6 +717,7 @@ function ReportActionItem({
                                                                     onSecondaryInteraction={showPopover}
                                                                     isActive={isReportActionActive && !isContextMenuActive}
                                                                     isEditingInline={isEditingInline}
+                                                                    processingAgentIDs={isAgentProcessingInThread ? threadProcessingAgentIDs : undefined}
                                                                 />
                                                             )}
                                                         </ReportActionItemFrame>

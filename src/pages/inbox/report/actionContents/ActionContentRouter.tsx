@@ -45,7 +45,6 @@ import {
     isCardIssuedAction,
     isCreatedTaskReportAction,
     isCreatedSupportTicketReportAction,
-    isDeletedReportPreviewWithError,
     isIOURequestReportAction,
     isMemberChangeAction,
     isMoneyRequestAction,
@@ -139,7 +138,7 @@ type ActionContentRouterProps = {
     /** Whether the search-page UI is active */
     isOnSearch: boolean;
 
-    /** Whether this is the newest Concierge comment eligible for the inline feedback prompt */
+    /** Whether this is the newest comment of Concierge or of a custom agent that is eligible for the inline feedback prompt */
     isLatestConciergeFeedbackAction: boolean;
 
     setIsPaymentMethodPopoverActive: (value: boolean) => void;
@@ -215,14 +214,13 @@ function ActionContentRouter({
             />
         );
     }
-    // This preview has no report left to show, so render the placeholder instead of pointing at a report that is gone.
-    if (action.actionName === CONST.REPORT.ACTIONS.TYPE.REPORT_PREVIEW && (isClosedExpenseReportWithNoExpenses || isDeletedReportPreviewWithError(action))) {
+    if (action.actionName === CONST.REPORT.ACTIONS.TYPE.REPORT_PREVIEW && isClosedExpenseReportWithNoExpenses) {
         return <RenderHTML html={`<deleted-action>${translate('parentReportAction.deletedReport')}</deleted-action>`} />;
     }
     if (action.actionName === CONST.REPORT.ACTIONS.TYPE.REPORT_PREVIEW) {
         return (
             <MoneyRequestReportPreview
-                // FlashList recycles cells, so this instance can be handed another report's props. Key forces a remount,
+                // Lists recycle cells, so this instance can be handed another report's props. Key forces a remount,
                 // or `useNewTransactions` would consider the new report's transactions as newly added on top of the old report's.
                 key={action.reportActionID}
                 iouReportID={getIOUReportIDFromReportActionPreview(action)}
@@ -330,6 +328,7 @@ function ActionContentRouter({
             <ReimbursedContent
                 action={action}
                 reportOwnerAccountID={reportOwnerAccountID}
+                originalReport={originalReport}
             />
         );
     }
