@@ -6,6 +6,8 @@ import {SearchQueryContext} from '@components/Search/SearchContextDefinitions';
 import {SearchScopeProvider} from '@components/Search/SearchScopeProvider';
 
 import {createTransactionThreadReport} from '@libs/actions/Report';
+import getActiveRoute from '@libs/Navigation/helpers/getActiveRoute';
+import Navigation from '@libs/Navigation/Navigation';
 
 import ChatTransactionPreview from '@pages/inbox/report/actionContents/ChatTransactionPreview';
 
@@ -42,6 +44,11 @@ jest.mock('@libs/actions/Report', () => {
         createTransactionThreadReport: jest.fn(),
     };
 });
+
+jest.mock('@libs/Navigation/helpers/getActiveRoute', () => jest.fn(() => ''));
+jest.spyOn(Navigation, 'navigate').mockImplementation(() => {});
+
+const mockGetActiveRoute = jest.mocked(getActiveRoute);
 
 const POLICY_ID = 'policy1';
 const POLICY_KEY = `${ONYXKEYS.COLLECTION.POLICY}${POLICY_ID}` as const;
@@ -102,5 +109,47 @@ describe('ChatTransactionPreview', () => {
 
         // Then the thread is created with the marker, so OpenReport can skip the large policy collections
         expect(createTransactionThreadReport).toHaveBeenCalledWith(expect.objectContaining({fullPolicySnapshotLastModified: LIVE_FULL_POLICY_SNAPSHOT_LAST_MODIFIED}));
+    });
+
+    const splitAction = {
+        ...iouAction,
+        reportActionID: 'splitAction1',
+        originalMessage: {...iouAction.originalMessage, type: CONST.IOU.REPORT_ACTION_TYPE.SPLIT},
+    } as ReportAction;
+
+    async function pressSplitPreview(isOnSearch: boolean) {
+        const preview = (
+            <ChatTransactionPreview
+                action={splitAction}
+                reportID="chat1"
+                chatReport={undefined}
+                iouReport={iouReport}
+                shouldShowSplitPreview
+                transactionID="transaction1"
+            />
+        );
+        render(<ComposeProviders components={[OnyxListItemProvider]}>{isOnSearch ? <SearchScopeProvider>{preview}</SearchScopeProvider> : preview}</ComposeProviders>);
+        await waitForBatchedUpdatesWithAct();
+        fireEvent.press(screen.getByText('Transaction preview'));
+    }
+
+    it('opens split details on the filtered Search list when the preview is pressed from Search', async () => {
+        mockGetActiveRoute.mockReturnValue('search?q=type%3Achat');
+
+        await pressSplitPreview(true);
+
+        const route = jest.mocked(Navigation.navigate).mock.calls.at(0)?.at(0) ?? '';
+        const params = new URLSearchParams(route.split('?').at(1));
+        expect(route.startsWith('search/split/splitAction1')).toBe(true);
+        expect(params.get('q')).toBe('type:chat');
+        expect(params.get('reportID')).toBe('chat1');
+    });
+
+    it('keeps the active report path when the split preview is pressed outside Search', async () => {
+        mockGetActiveRoute.mockReturnValue('r/chat1');
+
+        await pressSplitPreview(false);
+
+        expect(Navigation.navigate).toHaveBeenCalledWith('r/chat1/split/splitAction1');
     });
 });

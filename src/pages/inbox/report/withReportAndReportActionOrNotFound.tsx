@@ -5,7 +5,6 @@ import useOnyx from '@hooks/useOnyx';
 import useParentReportAction from '@hooks/useParentReportAction';
 import usePermissions from '@hooks/usePermissions';
 import useReportIsArchived from '@hooks/useReportIsArchived';
-import useResponsiveLayout from '@hooks/useResponsiveLayout';
 
 import {openReport} from '@libs/actions/Report';
 import getComponentDisplayName from '@libs/getComponentDisplayName';
@@ -72,16 +71,16 @@ function WithReportOrNotFoundImpl<TProps extends WithReportAndReportActionOrNotF
         linkedReportAction = parentReportAction ?? undefined;
     }
 
-    const {shouldUseNarrowLayout} = useResponsiveLayout();
-
-    // For small screen, we don't call openReport API when we go to a sub report page by deeplink
-    // So we need to call openReport here for small screen
+    // A report screen underneath this page has already loaded the action, so the effect returns immediately there.
+    // Opened over the Search list, nothing has loaded the chat, on a wide layout as well as a narrow one.
+    // reportActionID asks OpenReport for the action itself, which may be older than the loaded page.
     useEffect(() => {
-        if (!shouldUseNarrowLayout || (!isEmptyObject(report) && !isEmptyObject(linkedReportAction))) {
+        if (!isEmptyObject(report) && !isEmptyObject(linkedReportAction)) {
             return;
         }
         openReport({
             reportID: props.route.params.reportID,
+            reportActionID: props.route.params.reportActionID,
             introSelected,
             conciergeChat,
             hasReportActions,
@@ -90,7 +89,7 @@ function WithReportOrNotFoundImpl<TProps extends WithReportAndReportActionOrNotF
             hasCompletedGuidedSetupFlow: guidedSetupAndTourStatus?.hasCompletedGuidedSetupFlow,
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shouldUseNarrowLayout, props.route.params.reportID, currentUserAccountID]);
+    }, [props.route.params.reportID, props.route.params.reportActionID, currentUserAccountID]);
 
     // Perform all the loading checks
     const isLoadingReport = isLoadingReportData && !report?.reportID;
