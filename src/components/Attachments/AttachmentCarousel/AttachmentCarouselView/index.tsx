@@ -3,9 +3,8 @@ import CarouselButtons from '@components/Attachments/AttachmentCarousel/Carousel
 import CarouselItem from '@components/Attachments/AttachmentCarousel/CarouselItem';
 import {AttachmentCarouselPagerActionsContext, AttachmentCarouselPagerStateContext} from '@components/Attachments/AttachmentCarousel/Pager/AttachmentCarouselPagerContext';
 import type {AttachmentCarouselPagerActionsContextType, AttachmentCarouselPagerStateContextType} from '@components/Attachments/AttachmentCarousel/Pager/types';
-import type {UpdatePageProps} from '@components/Attachments/AttachmentCarousel/types';
 import useCarouselContextEvents from '@components/Attachments/AttachmentCarousel/useCarouselContextEvents';
-import type {Attachment, AttachmentSource} from '@components/Attachments/types';
+import type {Attachment} from '@components/Attachments/types';
 import BlockingView from '@components/BlockingViews/BlockingView';
 import {useFullScreenState} from '@components/VideoPlayerContexts/FullScreenContextProvider';
 
@@ -22,50 +21,18 @@ import variables from '@styles/variables';
 
 import CONST from '@src/CONST';
 
-import type {LayoutChangeEvent, ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent} from 'react-native';
+import type {LayoutChangeEvent, ListRenderItemInfo} from 'react-native';
 import type {PanGesture} from 'react-native-gesture-handler';
 
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Keyboard, PixelRatio, View} from 'react-native';
 import {GestureDetector, usePanGesture} from 'react-native-gesture-handler';
 import Animated, {scrollTo, useAnimatedRef, useSharedValue} from 'react-native-reanimated';
+import {scheduleOnRN} from 'react-native-worklets';
 
 import type AttachmentCarouselViewProps from './types';
 
-const viewabilityConfig = {
-    // To facilitate paging through the attachments, we want to consider an item "viewable" when it is
-    // more than 95% visible. When that happens we update the page index in the state.
-    itemVisiblePercentThreshold: 95,
-};
-
 const MIN_FLING_VELOCITY = 500;
-
-type ScrollNode = {
-    scrollLeft?: number;
-    clientWidth?: number;
-    getScrollableNode?: () => ScrollNode | null;
-    getNativeScrollRef?: () => ScrollNode | null;
-    getScrollResponder?: () => ScrollNode | null;
-};
-
-function isScrollNode(value: unknown): value is ScrollNode {
-    return value !== null && typeof value === 'object';
-}
-
-/** The DOM node the web list actually scrolls, where viewability's width and offset can be checked. */
-function readScrollGeometry(list: unknown): {scrollLeft: number | null; clientWidth: number | null} {
-    if (!isScrollNode(list)) {
-        return {scrollLeft: null, clientWidth: null};
-    }
-    const node = list.getScrollableNode?.() ?? list.getNativeScrollRef?.() ?? list.getScrollResponder?.()?.getScrollableNode?.() ?? list;
-    if (!isScrollNode(node)) {
-        return {scrollLeft: null, clientWidth: null};
-    }
-    return {
-        scrollLeft: typeof node.scrollLeft === 'number' ? node.scrollLeft : null,
-        clientWidth: typeof node.clientWidth === 'number' ? node.clientWidth : null,
-    };
-}
 
 type DeviceAwareGestureDetectorProps = {
     canUseTouchScreen: boolean;
@@ -93,7 +60,6 @@ function AttachmentCarouselView({
     onNavigate,
     onSwipeDown,
     setPage,
-    attachmentID,
 }: AttachmentCarouselViewProps) {
     const {translate} = useLocalize();
     const styles = useThemeStyles();
@@ -103,8 +69,6 @@ function AttachmentCarouselView({
     const isPagerScrolling = useSharedValue(false);
     const {handleTap, handleScaleChange, isScrollEnabled} = useCarouselContextEvents(setShouldShowArrows);
 
-    const [activeAttachmentID, setActiveAttachmentID] = useState<AttachmentSource | null>(attachmentID ?? source);
-
     const scrollRef = useAnimatedRef<Animated.FlatList<Attachment>>();
 
     const {shouldUseNarrowLayout} = useResponsiveLayout();
@@ -113,82 +77,27 @@ function AttachmentCarouselView({
     const insets = useSafeAreaInsets();
 
     // Before the list has laid out, size pages to the window minus the modal's horizontal safe-area
-    // padding. After layout, the list's own width is the page width, so a page can reach 95% visible.
+    // padding. After layout, the list's own width is the page width.
     const fallbackCellWidth = PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2 - insets.left - insets.right);
     const [listWidth, setListWidth] = useState(0);
     const cellWidth = listWidth > 0 ? listWidth : fallbackCellWidth;
 
-    // onViewableItemsChanged cannot change after mount, so the callback reads these instead of closing over render values.
-    const pageRef = useRef(page);
-    const cellWidthRef = useRef(cellWidth);
-    const listWidthRef = useRef(0);
-    const listScrollOffsetRef = useRef<number | null>(null);
-    const onNavigateRef = useRef(onNavigate);
-    const setPageRef = useRef(setPage);
-    useEffect(() => {
-        pageRef.current = page;
-    }, [page]);
-    useEffect(() => {
-        cellWidthRef.current = cellWidth;
-    }, [cellWidth]);
-    useEffect(() => {
-        onNavigateRef.current = onNavigate;
-    }, [onNavigate]);
-    useEffect(() => {
-        setPageRef.current = setPage;
-    }, [setPage]);
-
-    /** Updates the page state when the user navigates between attachments */
-    const [updatePage] = useState(() => ({viewableItems}: UpdatePageProps) => {
-        if (isFullScreenRef.current) {
+    /** The selected page changes only from an arrow, a keyboard shortcut, or the end of a pan. */
+    const navigateToPage = (index: number) => {
+        const item = attachments.at(index);
+        if (isFullScreenRef.current || index === page || index < 0 || !item) {
             return;
         }
 
-        // Rotation updates the list width, then the page width, then the scroll offset. Viewability
-        // during those gaps is the browser clamping the scroll, not a page the user chose.
-        const {scrollLeft, clientWidth} = readScrollGeometry(scrollRef.current);
-        const width = cellWidthRef.current;
-        if (clientWidth != null && Math.abs(clientWidth - width) > 1) {
-            return;
-        }
-        const listOffset = listScrollOffsetRef.current;
-        if (listOffset != null && scrollLeft != null && Math.abs(listOffset - scrollLeft) > 1) {
-            return;
-        }
-
-        // Since we can have only one item in view at a time, we can use the first item in the array
-        // to get the index of the current page
-        const entry = viewableItems.at(0);
-        if (!entry) {
-            Keyboard.dismiss();
-            setActiveAttachmentID(null);
-            return;
-        }
-
-        const item = entry.item;
-        if (entry.index != null && entry.index !== pageRef.current) {
-            Keyboard.dismiss();
-        }
-        if (entry.index != null) {
-            setPageRef.current(entry.index);
-            setActiveAttachmentID(item.attachmentID ?? item.source);
-        }
-
-        onNavigateRef.current?.(item);
-    });
-
-    const handleListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        listScrollOffsetRef.current = event.nativeEvent.contentOffset.x;
+        Keyboard.dismiss();
+        setPage(index);
+        onNavigate?.(item);
     };
 
     const handleListLayout = (event: LayoutChangeEvent) => {
         const nextWidth = PixelRatio.roundToNearestPixel(event.nativeEvent.layout.width);
-        if (nextWidth <= 0 || nextWidth === listWidthRef.current) {
+        if (nextWidth <= 0 || nextWidth === listWidth) {
             return;
-        }
-        listWidthRef.current = nextWidth;
-        if (pageRef.current >= 0) {
-            scrollRef.current?.scrollToOffset({offset: pageRef.current * nextWidth, animated: false});
         }
         setListWidth(nextWidth);
     };
@@ -206,6 +115,7 @@ function AttachmentCarouselView({
             return false;
         }
 
+        navigateToPage(nextIndex);
         scrollRef.current.scrollToIndex({index: nextIndex, animated: canUseTouchScreen});
         return true;
     };
@@ -254,6 +164,7 @@ function AttachmentCarouselView({
 
             isPagerScrolling.set(false);
             scrollTo(scrollRef, newIndex * cellWidth, 0, true);
+            scheduleOnRN(navigateToPage, newIndex);
         },
     });
 
@@ -274,11 +185,11 @@ function AttachmentCarouselView({
     };
 
     /** Defines how a single attachment should be rendered */
-    const renderItem = ({item}: ListRenderItemInfo<Attachment>) => (
+    const renderItem = ({item, index}: ListRenderItemInfo<Attachment>) => (
         <View style={[styles.h100, {width: cellWidth}]}>
             <CarouselItem
                 item={item}
-                isFocused={activeAttachmentID === (item.attachmentID ?? item.source)}
+                isFocused={index === page}
                 onPress={canUseTouchScreen ? handleTap : undefined}
                 isModalHovered={shouldShowArrows}
                 reportID={report?.reportID}
@@ -286,16 +197,17 @@ function AttachmentCarouselView({
         </View>
     );
 
-    // Scroll position is affected when window width is resized, so we readjust it on width changes
+    // Rotation changes the measured width. Scroll to the selected page without treating that as navigation.
     useEffect(() => {
-        if (attachments.length === 0 || scrollRef.current == null) {
+        if (attachments.length === 0 || page < 0 || scrollRef.current == null) {
             return;
         }
 
         scrollRef.current.scrollToIndex({index: page, animated: false});
-        // The hook is not supposed to run on page change, so we keep the page out of the dependencies
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [cellWidth]);
+        // `page` is omitted so an arrow or pan can animate its own scroll. The attachment array is
+        // kept whole because a same-length replacement still selects a different page.
+        // eslint-disable-next-line react-hooks/exhaustive-deps, rulesdir/prefer-narrow-hook-dependencies
+    }, [attachments, cellWidth]);
 
     return (
         <View
@@ -342,9 +254,6 @@ function AttachmentCarouselView({
                                     renderItem={renderItem}
                                     getItemLayout={getItemLayout}
                                     keyExtractor={extractItemKey}
-                                    viewabilityConfig={viewabilityConfig}
-                                    onViewableItemsChanged={updatePage}
-                                    onScroll={handleListScroll}
                                     onLayout={handleListLayout}
                                 />
                             </DeviceAwareGestureDetector>

@@ -252,14 +252,15 @@ const getSharedConfiguration = ({file = '.env', isDevServer = false}: Environmen
                 config.ignoreWarnings = [...(config.ignoreWarnings ?? []), /lottie-react-native\/lib\/module\/LottieView\/index\.web\.js/, /oxc-react-compiler-loader:/];
 
                 // Cache rules:
-                // - Onyx and react-native-live-markdown can be modified on the fly, changes to other node_modules are not reflected live
+                // - Onyx, react-native-live-markdown, and react-native-reanimated can be modified on the fly, changes to other node_modules are not reflected live
+                // - reanimated is excluded so the focused-cell retention patch is not served from a stale snapshot
                 // - Applies to `dev`, `build`, and Storybook alike
                 // eslint-disable-next-line no-param-reassign
                 config.cache ??= {type: 'persistent'};
                 if (typeof config.cache === 'object' && config.cache.type === 'persistent') {
                     // eslint-disable-next-line no-param-reassign
                     config.cache.snapshot = {
-                        managedPaths: [/([\\/]node_modules[\\/](?!react-native-onyx|@expensify\/react-native-live-markdown))/],
+                        managedPaths: [/([\\/]node_modules[\\/](?!react-native-onyx|react-native-reanimated|@expensify\/react-native-live-markdown))/],
                     };
                 }
 
