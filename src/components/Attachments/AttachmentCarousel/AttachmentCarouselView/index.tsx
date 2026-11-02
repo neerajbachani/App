@@ -25,7 +25,7 @@ import CONST from '@src/CONST';
 import type {LayoutChangeEvent, ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent} from 'react-native';
 import type {PanGesture} from 'react-native-gesture-handler';
 
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Keyboard, PixelRatio, View} from 'react-native';
 import {GestureDetector, usePanGesture} from 'react-native-gesture-handler';
 import Animated, {scrollTo, useAnimatedRef, useSharedValue} from 'react-native-reanimated';
@@ -114,10 +114,7 @@ function AttachmentCarouselView({
 
     // Before the list has laid out, size pages to the window minus the modal's horizontal safe-area
     // padding. After layout, the list's own width is the page width, so a page can reach 95% visible.
-    const fallbackCellWidth = useMemo(
-        () => PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2 - insets.left - insets.right),
-        [insets.left, insets.right, modalStyles.borderWidth, modalStyles.marginHorizontal, windowWidth],
-    );
+    const fallbackCellWidth = PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2 - insets.left - insets.right);
     const [listWidth, setListWidth] = useState(0);
     const cellWidth = listWidth > 0 ? listWidth : fallbackCellWidth;
 
@@ -126,75 +123,75 @@ function AttachmentCarouselView({
     const cellWidthRef = useRef(cellWidth);
     const listWidthRef = useRef(0);
     const listScrollOffsetRef = useRef<number | null>(null);
+    const onNavigateRef = useRef(onNavigate);
+    const setPageRef = useRef(setPage);
     useEffect(() => {
         pageRef.current = page;
     }, [page]);
     useEffect(() => {
         cellWidthRef.current = cellWidth;
     }, [cellWidth]);
+    useEffect(() => {
+        onNavigateRef.current = onNavigate;
+    }, [onNavigate]);
+    useEffect(() => {
+        setPageRef.current = setPage;
+    }, [setPage]);
 
     /** Updates the page state when the user navigates between attachments */
-    const updatePage = useCallback(
-        ({viewableItems}: UpdatePageProps) => {
-            if (isFullScreenRef.current) {
-                return;
-            }
+    const [updatePage] = useState(() => ({viewableItems}: UpdatePageProps) => {
+        if (isFullScreenRef.current) {
+            return;
+        }
 
-            // Rotation updates the list width, then the page width, then the scroll offset. Viewability
-            // during those gaps is the browser clamping the scroll, not a page the user chose.
-            const {scrollLeft, clientWidth} = readScrollGeometry(scrollRef.current);
-            const width = cellWidthRef.current;
-            if (clientWidth != null && Math.abs(clientWidth - width) > 1) {
-                return;
-            }
-            const listOffset = listScrollOffsetRef.current;
-            if (listOffset != null && scrollLeft != null && Math.abs(listOffset - scrollLeft) > 1) {
-                return;
-            }
+        // Rotation updates the list width, then the page width, then the scroll offset. Viewability
+        // during those gaps is the browser clamping the scroll, not a page the user chose.
+        const {scrollLeft, clientWidth} = readScrollGeometry(scrollRef.current);
+        const width = cellWidthRef.current;
+        if (clientWidth != null && Math.abs(clientWidth - width) > 1) {
+            return;
+        }
+        const listOffset = listScrollOffsetRef.current;
+        if (listOffset != null && scrollLeft != null && Math.abs(listOffset - scrollLeft) > 1) {
+            return;
+        }
 
-            // Since we can have only one item in view at a time, we can use the first item in the array
-            // to get the index of the current page
-            const entry = viewableItems.at(0);
-            if (!entry) {
-                Keyboard.dismiss();
-                setActiveAttachmentID(null);
-                return;
-            }
+        // Since we can have only one item in view at a time, we can use the first item in the array
+        // to get the index of the current page
+        const entry = viewableItems.at(0);
+        if (!entry) {
+            Keyboard.dismiss();
+            setActiveAttachmentID(null);
+            return;
+        }
 
-            const item = entry.item;
-            if (entry.index != null && entry.index !== pageRef.current) {
-                Keyboard.dismiss();
-            }
-            if (entry.index != null) {
-                setPage(entry.index);
-                setActiveAttachmentID(item.attachmentID ?? item.source);
-            }
+        const item = entry.item;
+        if (entry.index != null && entry.index !== pageRef.current) {
+            Keyboard.dismiss();
+        }
+        if (entry.index != null) {
+            setPageRef.current(entry.index);
+            setActiveAttachmentID(item.attachmentID ?? item.source);
+        }
 
-            if (onNavigate) {
-                onNavigate(item);
-            }
-        },
-        [isFullScreenRef, onNavigate, scrollRef, setPage],
-    );
+        onNavigateRef.current?.(item);
+    });
 
-    const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const handleListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         listScrollOffsetRef.current = event.nativeEvent.contentOffset.x;
-    }, []);
+    };
 
-    const handleListLayout = useCallback(
-        (event: LayoutChangeEvent) => {
-            const nextWidth = PixelRatio.roundToNearestPixel(event.nativeEvent.layout.width);
-            if (nextWidth <= 0 || nextWidth === listWidthRef.current) {
-                return;
-            }
-            listWidthRef.current = nextWidth;
-            if (pageRef.current >= 0) {
-                scrollRef.current?.scrollToOffset({offset: pageRef.current * nextWidth, animated: false});
-            }
-            setListWidth(nextWidth);
-        },
-        [scrollRef],
-    );
+    const handleListLayout = (event: LayoutChangeEvent) => {
+        const nextWidth = PixelRatio.roundToNearestPixel(event.nativeEvent.layout.width);
+        if (nextWidth <= 0 || nextWidth === listWidthRef.current) {
+            return;
+        }
+        listWidthRef.current = nextWidth;
+        if (pageRef.current >= 0) {
+            scrollRef.current?.scrollToOffset({offset: pageRef.current * nextWidth, animated: false});
+        }
+        setListWidth(nextWidth);
+    };
 
     /** Increments or decrements the index to get another selected item, returning whether the carousel moved */
     const cycleThroughAttachments = (deltaSlide: number) => {

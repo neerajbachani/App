@@ -7,6 +7,7 @@ type KeyboardAvoidingViewProps = RNKeyboardAvoidingViewProps & {
      */
     shouldOffsetBottomSafeAreaPadding?: boolean;
 
+    /** Whether react-native-keyboard-controller should measure the keyboard offset itself. */
     automaticOffset?: boolean;
 };
 
