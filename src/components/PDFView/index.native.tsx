@@ -12,6 +12,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useWindowDimensions from '@hooks/useWindowDimensions';
 
 import {openTravelDotLink} from '@libs/openTravelDotLink';
+import shouldDisableAttachmentModalKeyboardAvoidance from '@libs/shouldDisableAttachmentModalKeyboardAvoidance';
 import {getRelativeUrl, isTravelLink} from '@libs/TravelUtils';
 
 import CONST from '@src/CONST';
@@ -46,7 +47,18 @@ import PDFPasswordForm from './PDFPasswordForm';
 const LOADING_THUMBNAIL_HEIGHT = 250;
 const LOADING_THUMBNAIL_WIDTH = 250;
 
-function PDFView({onToggleKeyboard, onLoadComplete, fileName, onPress, isFocused, onScaleChanged, sourceURL, onLoadError, isUsedAsChatAttachment}: PDFViewNativeProps) {
+function PDFView({
+    onToggleKeyboard,
+    onLoadComplete,
+    fileName,
+    onPress,
+    isFocused,
+    onScaleChanged,
+    sourceURL,
+    onLoadError,
+    isUsedAsChatAttachment,
+    isUsedInAttachmentModal,
+}: PDFViewNativeProps) {
     const [shouldRequestPassword, setShouldRequestPassword] = useState(false);
     const [shouldAttemptPDFLoad, setShouldAttemptPDFLoad] = useState(true);
     const [shouldShowLoadingIndicator, setShouldShowLoadingIndicator] = useState(true);
@@ -193,7 +205,12 @@ function PDFView({onToggleKeyboard, onLoadComplete, fileName, onPress, isFocused
                     />
                 )}
                 {shouldRequestPassword && (
-                    <KeyboardAvoidingView style={themeStyles.flex1}>
+                    <KeyboardAvoidingView
+                        // The iOS attachment screen does not avoid the keyboard, so the form pads itself.
+                        behavior={isUsedInAttachmentModal && shouldDisableAttachmentModalKeyboardAvoidance ? 'padding' : undefined}
+                        automaticOffset={!!isUsedInAttachmentModal && shouldDisableAttachmentModalKeyboardAvoidance}
+                        style={themeStyles.flex1}
+                    >
                         <PDFPasswordForm
                             isFocused={!!isFocused}
                             onSubmit={attemptPDFLoadWithPassword}

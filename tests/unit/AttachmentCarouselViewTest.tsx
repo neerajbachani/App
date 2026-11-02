@@ -13,7 +13,7 @@ import {useFullScreenState} from '@components/VideoPlayerContexts/FullScreenCont
 
 import {canUseTouchScreen} from '@libs/DeviceCapabilities';
 
-import type {FlatListProps, FlatList, ListRenderItemInfo} from 'react-native';
+import type {FlatListProps, FlatList, LayoutChangeEvent, ListRenderItemInfo, NativeScrollEvent, NativeSyntheticEvent} from 'react-native';
 // eslint-disable-next-line no-restricted-imports -- This type-only import describes the real Gesture Handler module retained by the mock.
 import type * as GestureHandler from 'react-native-gesture-handler';
 import type * as Reanimated from 'react-native-reanimated';
@@ -41,7 +41,10 @@ const AttachmentCarouselView = jest.requireActual<{default: typeof AttachmentCar
 ).default;
 
 const mockScrollToIndex = jest.fn();
-const mockScrollRef = Object.assign(jest.fn(), {current: createMock<FlatList<Attachment>>({scrollToIndex: mockScrollToIndex})});
+const mockScrollToOffset = jest.fn();
+const mockScrollRef = Object.assign(jest.fn(), {
+    current: createMock<FlatList<Attachment> & {scrollLeft?: number; clientWidth?: number}>({scrollToIndex: mockScrollToIndex, scrollToOffset: mockScrollToOffset}),
+});
 let pagerState: AttachmentCarouselPagerStateContextType | null = null;
 const mockFlatList = jest.fn(({data, renderItem}: FlatListProps<Attachment>) => {
     pagerState = useContext(AttachmentCarouselPagerStateContext);
@@ -91,6 +94,8 @@ describe('AttachmentCarouselView web', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         pagerState = null;
+        mockScrollRef.current.scrollLeft = undefined;
+        mockScrollRef.current.clientWidth = undefined;
         jest.mocked(canUseTouchScreen).mockReturnValue(true);
         jest.mocked(useFullScreenState).mockReturnValue(createMock<ReturnType<typeof useFullScreenState>>({isFullScreen: false, isFullScreenRef: {current: false}}));
         jest.mocked(CarouselItem).mockImplementation(({item, isFocused}) => {
@@ -293,5 +298,132 @@ describe('AttachmentCarouselView web', () => {
         // Then out-of-range navigation does not scroll and pointer capture has no gesture detector
         expect(mockScrollToIndex).not.toHaveBeenCalled();
         expect(GestureDetector).not.toHaveBeenCalled();
+    });
+
+    function listProps() {
+        const props = mockFlatList.mock.calls.at(-1)?.[0];
+        if (!props?.onViewableItemsChanged || !props.onLayout || !props.onScroll) {
+            throw new Error('Expected the web FlatList callbacks');
+        }
+        return props;
+    }
+
+    function settleList(width: number, offset: number) {
+        act(() => {
+            listProps().onLayout?.(createMock<LayoutChangeEvent>({nativeEvent: {layout: {x: 0, y: 0, width, height: 1}}}));
+        });
+        act(() => {
+            listProps().onScroll?.(createMock<NativeSyntheticEvent<NativeScrollEvent>>({nativeEvent: {contentOffset: {x: offset, y: 0}}}));
+        });
+        mockScrollRef.current.scrollLeft = offset;
+        mockScrollRef.current.clientWidth = width;
+        return listProps();
+    }
+
+    it('ignores viewability while the list width does not match the page width', () => {
+        // Given a laid-out carousel whose DOM width has not caught up to the page width
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        const {props} = renderCarousel();
+        settleList(400, 0);
+        mockScrollRef.current.clientWidth = 250;
+
+        // When viewability reports another page during that mismatch
+        act(() => listProps().onViewableItemsChanged?.({viewableItems: [{item: {source: 'second.png'}, key: 'second', index: 1, isViewable: true}], changed: []}));
+
+        // Then the carousel keeps the current page and the password field
+        expect(dismiss).not.toHaveBeenCalled();
+        expect(props.setPage).not.toHaveBeenCalled();
+        expect(props.onNavigate).not.toHaveBeenCalled();
+        expect(screen.getByText('first.png:true')).toBeOnTheScreen();
+        dismiss.mockRestore();
+    });
+
+    it('ignores viewability while the DOM scroll offset is stale', () => {
+        // Given a laid-out carousel whose DOM scroll position is ahead of the last scroll event
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        const {props} = renderCarousel();
+        settleList(400, 0);
+        mockScrollRef.current.scrollLeft = 800;
+
+        // When viewability reports another page from that stale offset
+        act(() => listProps().onViewableItemsChanged?.({viewableItems: [{item: {source: 'second.png'}, key: 'second', index: 1, isViewable: true}], changed: []}));
+
+        // Then the carousel does not treat the stale offset as navigation
+        expect(dismiss).not.toHaveBeenCalled();
+        expect(props.setPage).not.toHaveBeenCalled();
+        expect(props.onNavigate).not.toHaveBeenCalled();
+        expect(screen.getByText('first.png:true')).toBeOnTheScreen();
+        dismiss.mockRestore();
+    });
+
+    it('does not dismiss the keyboard when viewability reports the current page again', () => {
+        // Given a settled carousel on the first page
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        const {props} = renderCarousel();
+        settleList(400, 0);
+
+        // When the same page is reported visible again
+        act(() => listProps().onViewableItemsChanged?.({viewableItems: [{item: {source: 'first.png'}, key: 'first', index: 0, isViewable: true}], changed: []}));
+
+        // Then the keyboard stays open
+        expect(dismiss).not.toHaveBeenCalled();
+        expect(props.setPage).toHaveBeenCalledWith(0);
+        dismiss.mockRestore();
+    });
+
+    it('dismisses the keyboard and navigates when a different page becomes visible', () => {
+        // Given a settled carousel on the first page
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        const onNavigate = createOnNavigateMock();
+        const {props} = renderCarousel({onNavigate});
+        settleList(400, 0);
+
+        // When the next page becomes visible
+        const next: Attachment = {source: 'second.png'};
+        act(() => listProps().onViewableItemsChanged?.({viewableItems: [{item: next, key: 'second', index: 1, isViewable: true}], changed: []}));
+
+        // Then the keyboard closes and the carousel follows that page
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        expect(props.setPage).toHaveBeenCalledWith(1);
+        expect(onNavigate).toHaveBeenCalledWith(next);
+        expect(screen.getByText('second.png:true')).toBeOnTheScreen();
+        dismiss.mockRestore();
+    });
+
+    it('clears focus when the visible list is empty and the list geometry matches', () => {
+        // Given a settled carousel
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        renderCarousel();
+        settleList(400, 0);
+
+        // When nothing is visible
+        act(() => listProps().onViewableItemsChanged?.({viewableItems: [], changed: []}));
+
+        // Then focus is cleared
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('first.png:false')).toBeOnTheScreen();
+        dismiss.mockRestore();
+    });
+
+    it('keeps one viewability callback and calls the latest onNavigate after rerender', () => {
+        // Given a carousel whose navigation callback is replaced
+        const firstNavigate = createOnNavigateMock();
+        const secondNavigate = createOnNavigateMock();
+        const {props, rerender} = renderCarousel({onNavigate: firstNavigate});
+        const viewability = listProps().onViewableItemsChanged;
+
+        // When the parent rerenders with a new callback and a page becomes visible
+        rerender(
+            <AttachmentCarouselView
+                {...props}
+                onNavigate={secondNavigate}
+            />,
+        );
+        act(() => viewability?.({viewableItems: [{item: {source: 'second.png'}, key: 'second', index: 1, isViewable: true}], changed: []}));
+
+        // Then FlatList keeps the original callback and navigation uses the replacement
+        expect(listProps().onViewableItemsChanged).toBe(viewability);
+        expect(firstNavigate).not.toHaveBeenCalled();
+        expect(secondNavigate).toHaveBeenCalledTimes(1);
     });
 });

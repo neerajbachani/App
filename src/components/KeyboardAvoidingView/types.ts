@@ -6,6 +6,9 @@ type KeyboardAvoidingViewProps = RNKeyboardAvoidingViewProps & {
      * The KeyboardAvoidingView will use a negative keyboardVerticalOffset.
      */
     shouldOffsetBottomSafeAreaPadding?: boolean;
+
+    /** Whether react-native-keyboard-controller should measure the keyboard offset itself. */
+    automaticOffset?: boolean;
 };
 
 // eslint-disable-next-line import/prefer-default-export
