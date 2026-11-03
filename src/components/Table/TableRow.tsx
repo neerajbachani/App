@@ -198,6 +198,12 @@ export default function TableRow({
         rowVerticalPaddingStyle,
     ];
 
+    // Safari 16 aligns the wide-row grid to the scroll height, which is taller than this
+    // min height while a workspace row is first measured. The owner column then paints
+    // below the 56px row and the next row covers it. A definite height keeps the columns
+    // inside the row.
+    const wideRowContentHeight = !shouldUseNarrowTableLayout && rowContentHeightStyle?.minHeight != null ? rowContentHeightStyle.minHeight : undefined;
+
     const tableRowContentStyles = [
         styles.flex1,
         styles.flexRow,
@@ -207,7 +213,12 @@ export default function TableRow({
         styles.dFlex,
         rowContentHeightStyle,
         // Use Grid on web when available (will override flex if supported)
-        !shouldUseNarrowTableLayout && [styles.dGrid, {gridTemplateColumns: gridTemplateColumns.join(' ')}],
+        !shouldUseNarrowTableLayout && [
+            styles.dGrid,
+            styles.overflowHidden,
+            {gridTemplateColumns: gridTemplateColumns.join(' ')},
+            wideRowContentHeight != null && {height: wideRowContentHeight},
+        ],
     ];
 
     const tableRowPressableHoverStyle = (() => {
