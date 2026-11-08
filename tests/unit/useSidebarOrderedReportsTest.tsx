@@ -622,6 +622,48 @@ describe('useSidebarOrderedReports', () => {
         });
     });
 
+    it('rechecks the parent chat when leaving its thread', async () => {
+        const displayedReports = createMockReports({
+            report1: {reportName: 'Parent chat'},
+        });
+        const threadReport = {
+            ...displayedReports['1'],
+            reportID: '2',
+            reportName: 'Thread',
+            parentReportID: '1',
+            parentReportActionID: '100',
+        };
+        mockSidebarUtils.getReportsToDisplayInLHN.mockReturnValue({
+            [`${ONYXKEYS.COLLECTION.REPORT}1`]: displayedReports['1'],
+            [`${ONYXKEYS.COLLECTION.REPORT}2`]: threadReport,
+        });
+        mockSidebarUtils.updateReportsToDisplayInLHN.mockImplementation(({displayedReports: reports}) => reports);
+        currentReportIDForTestsValue = '2';
+
+        try {
+            await act(async () => {
+                await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}1`, displayedReports['1']);
+                await Onyx.set(`${ONYXKEYS.COLLECTION.REPORT}2`, threadReport);
+            });
+
+            const {rerender} = renderHook(() => useSidebarOrderedReports(), {wrapper: TestWrapper});
+            await waitForBatchedUpdatesWithAct();
+            mockSidebarUtils.updateReportsToDisplayInLHN.mockClear();
+
+            currentReportIDForTestsValue = '1';
+            rerender({});
+            await waitForBatchedUpdatesWithAct();
+
+            expect(mockSidebarUtils.updateReportsToDisplayInLHN).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    updatedReportsKeys: expect.arrayContaining([`${ONYXKEYS.COLLECTION.REPORT}1`, `${ONYXKEYS.COLLECTION.REPORT}2`]),
+                }),
+            );
+        } finally {
+            currentReportIDForTestsValue = undefined;
+        }
+    });
+
     describe('reportAttributes changes', () => {
         const createReportAttributes = (attributes: Partial<ReportAttributes> = {}): ReportAttributes => ({
             reportName: 'Chat',

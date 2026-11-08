@@ -130,7 +130,9 @@ function SidebarOrderedReportsContextProvider({
     const reportAttributes = useReportAttributes();
     const prevReportAttributes = usePrevious(reportAttributes);
     const reportAttributesUpdates = useMemo(() => getReportAttributesUpdates(reportAttributes, prevReportAttributes), [reportAttributes, prevReportAttributes]);
-    const [currentReportsToDisplay, setCurrentReportsToDisplay] = useState<ReportsToDisplayInLHN>({});
+    // Previous incremental result. It is read on the next pass and never rendered, so it lives in a ref:
+    // copying it into state scheduled one more update per Onyx commit and tripped "Maximum update depth exceeded".
+    const currentReportsToDisplayRef = useRef<ReportsToDisplayInLHN>({});
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const {isOffline} = useNetwork();
     const {accountID, login: currentUserLogin} = useCurrentUserPersonalDetails();
@@ -213,9 +215,15 @@ function SidebarOrderedReportsContextProvider({
         }
 
         // Make sure the previous and current reports are always included in the updates when we switch reports.
+        // Leaving a thread also rechecks its parent. The parent can be an empty DM that should drop out of the LHN
+        // once its last message is gone, and that used to happen only on the extra render this cache no longer schedules.
         if (prevDerivedCurrentReportID !== derivedCurrentReportID) {
             reportsToUpdate.add(`${ONYXKEYS.COLLECTION.REPORT}${prevDerivedCurrentReportID}`);
             reportsToUpdate.add(`${ONYXKEYS.COLLECTION.REPORT}${derivedCurrentReportID}`);
+            const previousReportParentID = chatReports?.[`${ONYXKEYS.COLLECTION.REPORT}${prevDerivedCurrentReportID}`]?.parentReportID;
+            if (previousReportParentID) {
+                reportsToUpdate.add(`${ONYXKEYS.COLLECTION.REPORT}${previousReportParentID}`);
+            }
         }
 
         // The LHN hides the transaction thread of a single-expense report and shows the expense report instead, whose
@@ -255,6 +263,7 @@ function SidebarOrderedReportsContextProvider({
     ]);
 
     const reportsToDisplayInLHN = useMemo(() => {
+        const currentReportsToDisplay = currentReportsToDisplayRef.current;
         const updatedReports = getUpdatedReports();
         const hasCachedReports = Object.keys(currentReportsToDisplay).length > 0;
 
@@ -362,7 +371,7 @@ function SidebarOrderedReportsContextProvider({
     }, [reportsDrafts]);
 
     useEffect(() => {
-        setCurrentReportsToDisplay(reportsToDisplayInLHN);
+        currentReportsToDisplayRef.current = reportsToDisplayInLHN;
     }, [reportsToDisplayInLHN]);
 
     const getOrderedReportIDs = useCallback(
@@ -416,7 +425,7 @@ function SidebarOrderedReportsContextProvider({
 
     const clearLHNCache = useCallback(() => {
         Log.info('[useSidebarOrderedReports] Clearing sidebar cache manually via debug modal');
-        setCurrentReportsToDisplay({});
+        currentReportsToDisplayRef.current = {};
         setClearCacheDummyCounter((current) => current + 1);
     }, []);
 

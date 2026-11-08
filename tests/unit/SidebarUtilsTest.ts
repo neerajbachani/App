@@ -5111,6 +5111,155 @@ describe('SidebarUtils', () => {
                 expect(result).toBe(displayedReports);
             });
 
+            it('returns the same map when an unread row is rechecked and nothing changed', () => {
+                const report: Report = {
+                    ...createRandomReport(1, undefined),
+                    type: CONST.REPORT.TYPE.CHAT,
+                    lastMessageText: 'hello',
+                    lastReadTime: undefined,
+                    lastActorAccountID: undefined,
+                    lastVisibleActionCreated: '2025-01-20 12:30:03.784',
+                    isPinned: false,
+                    isOwnPolicyExpenseChat: false,
+                    participants: {
+                        [CURRENT_USER_ACCOUNT_ID]: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                        18921695: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                    },
+                };
+                const reportKey = `${ONYXKEYS.COLLECTION.REPORT}${report.reportID}`;
+                const reports: OnyxCollection<Report> = {[reportKey]: report};
+                const reportAttributes: ReportAttributesDerivedValue['reports'] = {
+                    [report.reportID]: {
+                        reportName: 'Unread chat',
+                        isEmpty: false,
+                        brickRoadStatus: undefined,
+                        requiresAttention: false,
+                        reportErrors: {},
+                    },
+                };
+                const params = {
+                    currentReportId: report.reportID,
+                    policies: {},
+                    reports,
+                    isDefaultRoomsBetaEnabled: false,
+                    priorityMode: CONST.PRIORITY_MODE.DEFAULT,
+                    draftComments: {},
+                    transactionViolations: {},
+                    transactions: {},
+                    isOffline: false,
+                    currentUserLogin: CURRENT_USER_LOGIN,
+                    currentUserAccountID: CURRENT_USER_ACCOUNT_ID,
+                    reportNameValuePairs: {},
+                    reportAttributes,
+                    guideAccountIDs: [],
+                    conciergeReportID: undefined,
+                    session: {accountID: CURRENT_USER_ACCOUNT_ID, email: CURRENT_USER_LOGIN},
+                };
+                const displayedReports = SidebarUtils.getReportsToDisplayInLHN(params);
+
+                const rechecked = SidebarUtils.updateReportsToDisplayInLHN({
+                    ...params,
+                    displayedReports,
+                    updatedReportsKeys: [reportKey],
+                    isInFocusMode: false,
+                });
+
+                expect(displayedReports[reportKey]?.isUnreadReport).toBe(true);
+                expect(rechecked).toBe(displayedReports);
+                expect(rechecked[reportKey]).toBe(displayedReports[reportKey]);
+            });
+
+            it('rebuilds an unread row when its report or a derived flag changes', () => {
+                const report: Report = {
+                    ...createRandomReport(1, undefined),
+                    type: CONST.REPORT.TYPE.CHAT,
+                    lastMessageText: 'hello',
+                    lastReadTime: undefined,
+                    lastActorAccountID: undefined,
+                    lastVisibleActionCreated: '2025-01-20 12:30:03.784',
+                    isPinned: false,
+                    isOwnPolicyExpenseChat: false,
+                    participants: {
+                        [CURRENT_USER_ACCOUNT_ID]: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                        18921695: {notificationPreference: CONST.REPORT.NOTIFICATION_PREFERENCE.ALWAYS},
+                    },
+                };
+                const reportKey = `${ONYXKEYS.COLLECTION.REPORT}${report.reportID}`;
+                const baseAttributes: ReportAttributesDerivedValue['reports'][string] = {
+                    reportName: 'Unread chat',
+                    isEmpty: false,
+                    brickRoadStatus: undefined,
+                    requiresAttention: false,
+                    reportErrors: {},
+                };
+                const build = (nextReport: Report, requiresAttention: boolean) =>
+                    SidebarUtils.getReportsToDisplayInLHN({
+                        currentReportId: nextReport.reportID,
+                        policies: {},
+                        reports: {[reportKey]: nextReport},
+                        isDefaultRoomsBetaEnabled: false,
+                        priorityMode: CONST.PRIORITY_MODE.DEFAULT,
+                        draftComments: {},
+                        transactionViolations: {},
+                        transactions: {},
+                        isOffline: false,
+                        currentUserLogin: CURRENT_USER_LOGIN,
+                        currentUserAccountID: CURRENT_USER_ACCOUNT_ID,
+                        reportNameValuePairs: {},
+                        reportAttributes: {[nextReport.reportID]: {...baseAttributes, requiresAttention}},
+                        guideAccountIDs: [],
+                        conciergeReportID: undefined,
+                        session: {accountID: CURRENT_USER_ACCOUNT_ID, email: CURRENT_USER_LOGIN},
+                    });
+                const displayedReports = build(report, false);
+                const changedReport = {...report, lastVisibleActionCreated: '2025-01-20 13:00:00.000'};
+                const afterReportChange = SidebarUtils.updateReportsToDisplayInLHN({
+                    displayedReports,
+                    policies: {},
+                    reports: {[reportKey]: changedReport},
+                    updatedReportsKeys: [reportKey],
+                    currentReportId: report.reportID,
+                    isInFocusMode: false,
+                    isDefaultRoomsBetaEnabled: false,
+                    transactions: {},
+                    transactionViolations: {},
+                    reportNameValuePairs: {},
+                    reportAttributes: {[report.reportID]: baseAttributes},
+                    draftComments: {},
+                    isOffline: false,
+                    currentUserLogin: CURRENT_USER_LOGIN,
+                    currentUserAccountID: CURRENT_USER_ACCOUNT_ID,
+                    guideAccountIDs: [],
+                    conciergeReportID: undefined,
+                    session: {accountID: CURRENT_USER_ACCOUNT_ID, email: CURRENT_USER_LOGIN},
+                });
+                const afterFlagChange = SidebarUtils.updateReportsToDisplayInLHN({
+                    displayedReports: afterReportChange,
+                    policies: {},
+                    reports: {[reportKey]: changedReport},
+                    updatedReportsKeys: [reportKey],
+                    currentReportId: report.reportID,
+                    isInFocusMode: false,
+                    isDefaultRoomsBetaEnabled: false,
+                    transactions: {},
+                    transactionViolations: {},
+                    reportNameValuePairs: {},
+                    reportAttributes: {[report.reportID]: {...baseAttributes, requiresAttention: true}},
+                    draftComments: {},
+                    isOffline: false,
+                    currentUserLogin: CURRENT_USER_LOGIN,
+                    currentUserAccountID: CURRENT_USER_ACCOUNT_ID,
+                    guideAccountIDs: [],
+                    conciergeReportID: undefined,
+                    session: {accountID: CURRENT_USER_ACCOUNT_ID, email: CURRENT_USER_LOGIN},
+                });
+
+                expect(afterReportChange).not.toBe(displayedReports);
+                expect(afterReportChange[reportKey]?.lastVisibleActionCreated).toBe('2025-01-20 13:00:00.000');
+                expect(afterFlagChange).not.toBe(afterReportChange);
+                expect(afterFlagChange[reportKey]?.requiresAttention).toBe(true);
+            });
+
             it('should return a new reference when a report is removed', () => {
                 const reports: OnyxCollection<Report> = {};
                 const displayedReports = createSidebarReportsCollection([{reportName: 'Report 1', isPinned: false, hasErrorsOtherThanFailedReceipt: false}]);

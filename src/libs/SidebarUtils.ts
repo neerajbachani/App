@@ -265,6 +265,35 @@ function shouldDisplayReportInLHN({
 /** The LHN set produced by the most recent build, read on report open to detect unread chats the LHN did not surface. */
 let lastReportsToDisplayInLHN: ReportsToDisplayInLHN | undefined;
 
+type LHNEntryFlags = {
+    requiresAttention: boolean;
+    hasErrorsOtherThanFailedReceipt: boolean | undefined;
+    isUnreadReport: boolean;
+    lastVisibleActionCreatedForInboxTab: string;
+};
+
+// Flagged rows are stored as a copy, so they can never be === the Onyx report. Remember the source report
+// and reuse the copy when that report and these four derived fields are unchanged.
+const sourceReportByLHNEntry = new WeakMap<ReportsToDisplayInLHN[string], Report>();
+
+function buildFlaggedLHNEntry(report: Report, flags: LHNEntryFlags): ReportsToDisplayInLHN[string] {
+    const entry = {...report, ...flags};
+    sourceReportByLHNEntry.set(entry, report);
+    return entry;
+}
+
+function isSameFlaggedLHNEntry(existingEntry: ReportsToDisplayInLHN[string] | undefined, report: Report, flags: LHNEntryFlags): boolean {
+    if (!existingEntry || sourceReportByLHNEntry.get(existingEntry) !== report) {
+        return false;
+    }
+    return (
+        existingEntry.requiresAttention === flags.requiresAttention &&
+        existingEntry.hasErrorsOtherThanFailedReceipt === flags.hasErrorsOtherThanFailedReceipt &&
+        existingEntry.isUnreadReport === flags.isUnreadReport &&
+        existingEntry.lastVisibleActionCreatedForInboxTab === flags.lastVisibleActionCreatedForInboxTab
+    );
+}
+
 /** Used to detect when the focused report changes, so its LHN state is captured before the rebuild that opening triggers. */
 let lastBuildCurrentReportId: string | undefined;
 
@@ -373,10 +402,10 @@ function getReportsToDisplayInLHN({
             const oneTransactionThreadReport = getOneTransactionThreadReportForLHN(report, reports, reportAttributes);
             const isUnreadReport = getIsUnreadReportForInboxTab(report, oneTransactionThreadReport, isReportArchived, reportAttributes?.[report?.reportID]?.isEmpty);
             const lastVisibleActionCreatedForInboxTab = getReportLastVisibleActionCreated(report, oneTransactionThreadReport);
-            reportsToDisplay[reportID] =
-                requiresAttention || hasErrorsOtherThanFailedReceipt || isUnreadReport
-                    ? {...report, requiresAttention, hasErrorsOtherThanFailedReceipt, isUnreadReport, lastVisibleActionCreatedForInboxTab}
-                    : report;
+            const hasFlags = requiresAttention || hasErrorsOtherThanFailedReceipt || isUnreadReport;
+            reportsToDisplay[reportID] = hasFlags
+                ? buildFlaggedLHNEntry(report, {requiresAttention, hasErrorsOtherThanFailedReceipt, isUnreadReport, lastVisibleActionCreatedForInboxTab})
+                : report;
         }
     }
 
@@ -482,15 +511,11 @@ function updateReportsToDisplayInLHN({
             const lastVisibleActionCreatedForInboxTab = getReportLastVisibleActionCreated(report, oneTransactionThreadReport);
             const hasFlags = requiresAttention || hasErrorsOtherThanFailedReceipt || isUnreadReport;
             const existingEntry = displayedReports[reportID];
+            const flags = {requiresAttention, hasErrorsOtherThanFailedReceipt, isUnreadReport, lastVisibleActionCreatedForInboxTab};
 
             if (hasFlags) {
-                if (
-                    existingEntry !== report ||
-                    existingEntry?.requiresAttention !== requiresAttention ||
-                    existingEntry?.hasErrorsOtherThanFailedReceipt !== hasErrorsOtherThanFailedReceipt ||
-                    existingEntry?.isUnreadReport !== isUnreadReport
-                ) {
-                    getMutableCopy()[reportID] = {...report, requiresAttention, hasErrorsOtherThanFailedReceipt, isUnreadReport, lastVisibleActionCreatedForInboxTab};
+                if (!isSameFlaggedLHNEntry(existingEntry, report, flags)) {
+                    getMutableCopy()[reportID] = buildFlaggedLHNEntry(report, flags);
                 }
             } else if (existingEntry !== report) {
                 getMutableCopy()[reportID] = report;
