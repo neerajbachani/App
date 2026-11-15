@@ -13,7 +13,7 @@ import {useFullScreenState} from '@components/VideoPlayerContexts/FullScreenCont
 
 import {canUseTouchScreen} from '@libs/DeviceCapabilities';
 
-import type {FlatListProps, FlatList, ListRenderItemInfo} from 'react-native';
+import type {FlatListProps, FlatList, LayoutChangeEvent, ListRenderItemInfo} from 'react-native';
 // eslint-disable-next-line no-restricted-imports -- This type-only import describes the real Gesture Handler module retained by the mock.
 import type * as GestureHandler from 'react-native-gesture-handler';
 import type * as Reanimated from 'react-native-reanimated';
@@ -41,7 +41,10 @@ const AttachmentCarouselView = jest.requireActual<{default: typeof AttachmentCar
 ).default;
 
 const mockScrollToIndex = jest.fn();
-const mockScrollRef = Object.assign(jest.fn(), {current: createMock<FlatList<Attachment>>({scrollToIndex: mockScrollToIndex})});
+const mockScrollToOffset = jest.fn();
+const mockScrollRef = Object.assign(jest.fn(), {
+    current: createMock<FlatList<Attachment> & {scrollLeft?: number; clientWidth?: number}>({scrollToIndex: mockScrollToIndex, scrollToOffset: mockScrollToOffset}),
+});
 let pagerState: AttachmentCarouselPagerStateContextType | null = null;
 const mockFlatList = jest.fn(({data, renderItem}: FlatListProps<Attachment>) => {
     pagerState = useContext(AttachmentCarouselPagerStateContext);
@@ -91,6 +94,8 @@ describe('AttachmentCarouselView web', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         pagerState = null;
+        mockScrollRef.current.scrollLeft = undefined;
+        mockScrollRef.current.clientWidth = undefined;
         jest.mocked(canUseTouchScreen).mockReturnValue(true);
         jest.mocked(useFullScreenState).mockReturnValue(createMock<ReturnType<typeof useFullScreenState>>({isFullScreen: false, isFullScreenRef: {current: false}}));
         jest.mocked(CarouselItem).mockImplementation(({item, isFocused}) => {
@@ -189,26 +194,77 @@ describe('AttachmentCarouselView web', () => {
         expect(onNavigate.mock.calls.at(0)?.at(0)).toBe(second);
     });
 
-    it('clears focus for empty tokens and navigates a null-index token without changing page or focus', () => {
-        // Given a real callback installed by the web target
+    it('keeps the focused attachment when viewability has no page', () => {
+        // Given the selected attachment. An empty or index-less sample is a layout gap, not a swipe.
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
         const {props} = renderCarousel();
         const viewability = mockFlatList.mock.calls.at(-1)?.[0].onViewableItemsChanged;
         expect(viewability).toBeDefined();
         if (!viewability) {
             throw new Error('Expected viewability callback');
         }
-        const attachment: Attachment = {source: 'second.png'};
 
-        // When a token has no index, navigation still receives it, then an empty token set clears focus
-        act(() => viewability({viewableItems: [{item: attachment, key: 'second', index: null, isViewable: true}], changed: []}));
-        expect(props.onNavigate).toHaveBeenCalledWith(attachment);
-        expect(props.setPage).not.toHaveBeenCalled();
-        expect(screen.getByText('first.png:true')).toBeOnTheScreen();
+        // When rotation reports no viewable page, then a token with no index
         act(() => viewability({viewableItems: [], changed: []}));
+        act(() => viewability({viewableItems: [{item: {source: 'second.png'}, key: 'second', index: null, isViewable: true}], changed: []}));
 
-        // Then empty input removes active focus without another navigation
-        expect(screen.getByText('first.png:false')).toBeOnTheScreen();
-        expect(props.onNavigate).toHaveBeenCalledTimes(1);
+        // Then the password form stays mounted and the carousel does not navigate
+        expect(screen.getByText('first.png:true')).toBeOnTheScreen();
+        expect(props.setPage).not.toHaveBeenCalled();
+        expect(props.onNavigate).not.toHaveBeenCalled();
+        expect(dismiss).not.toHaveBeenCalled();
+        dismiss.mockRestore();
+    });
+
+    it('realigns the selected page when the list width changes and ignores a sample from the old width', () => {
+        // Given a selected PDF whose list then lays out at a width the window-based page size does not match
+        const dismiss = jest.spyOn(Keyboard, 'dismiss');
+        const {props} = renderCarousel({page: 1, attachments: [{source: 'first.png'}, {source: 'second.png', attachmentID: 'pdf'}], source: 'second.png', attachmentID: 'pdf'});
+        const listProps = mockFlatList.mock.calls.at(-1)?.[0];
+        if (!listProps?.onLayout || !listProps.onViewableItemsChanged) {
+            throw new Error('Expected the web list layout and viewability callbacks');
+        }
+
+        // When the list measures its width, then viewability reports a neighbor while the list is still the old width
+        act(() => {
+            listProps.onLayout?.(createMock<LayoutChangeEvent>({nativeEvent: {layout: {x: 0, y: 0, width: 320, height: 500}}}));
+        });
+        mockScrollRef.current.clientWidth = 700;
+        mockScrollRef.current.scrollLeft = 0;
+        act(() => {
+            listProps.onViewableItemsChanged?.({viewableItems: [{item: {source: 'first.png'}, key: 'first', index: 0, isViewable: true}], changed: []});
+        });
+
+        // Then the list scrolls to the selected page and the neighbor sample does not close the password form
+        expect(mockScrollToOffset).toHaveBeenCalledWith({offset: 320, animated: false});
+        expect(screen.getByText('pdf:true')).toBeOnTheScreen();
+        expect(props.setPage).not.toHaveBeenCalled();
+        expect(dismiss).not.toHaveBeenCalled();
+        dismiss.mockRestore();
+    });
+
+    it('still navigates when a swipe settles on another page', () => {
+        // Given a list whose width matches the page slot, so the sample is a completed swipe rather than a resize
+        const {props} = renderCarousel();
+        const listProps = mockFlatList.mock.calls.at(-1)?.[0];
+        if (!listProps?.onLayout || !listProps.onViewableItemsChanged) {
+            throw new Error('Expected the web list layout and viewability callbacks');
+        }
+        act(() => {
+            listProps.onLayout?.(createMock<LayoutChangeEvent>({nativeEvent: {layout: {x: 0, y: 0, width: 400, height: 500}}}));
+        });
+        mockScrollRef.current.clientWidth = 400;
+        mockScrollRef.current.scrollLeft = 400;
+
+        // When the next page is the one actually in view
+        act(() => {
+            listProps.onViewableItemsChanged?.({viewableItems: [{item: {source: 'second.png'}, key: 'second', index: 1, isViewable: true}], changed: []});
+        });
+
+        // Then the swipe still selects that attachment
+        expect(props.setPage).toHaveBeenCalledWith(1);
+        expect(props.onNavigate).toHaveBeenCalledWith({source: 'second.png'});
+        expect(screen.getByText('second.png:true')).toBeOnTheScreen();
     });
 
     it('returns before keyboard, page or navigation effects during fullscreen', () => {

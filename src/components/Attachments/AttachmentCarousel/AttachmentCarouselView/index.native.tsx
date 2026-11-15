@@ -42,6 +42,10 @@ function AttachmentCarouselView({
 
     /** Updates the page state when the user navigates between attachments */
     const updatePage = (newPageIndex: number) => {
+        // Re-reporting the page already selected is a layout pass, not a swipe. Dismissing here closes the password keyboard.
+        if (newPageIndex === page) {
+            return;
+        }
         Keyboard.dismiss();
         setShouldShowArrows(true);
 

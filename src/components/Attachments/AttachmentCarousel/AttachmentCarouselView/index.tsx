@@ -21,10 +21,10 @@ import variables from '@styles/variables';
 
 import CONST from '@src/CONST';
 
-import type {ListRenderItemInfo} from 'react-native';
+import type {LayoutChangeEvent, ListRenderItemInfo} from 'react-native';
 import type {PanGesture} from 'react-native-gesture-handler';
 
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {Keyboard, PixelRatio, View} from 'react-native';
 import {GestureDetector, usePanGesture} from 'react-native-gesture-handler';
 import Animated, {scrollTo, useAnimatedRef, useSharedValue} from 'react-native-reanimated';
@@ -38,6 +38,52 @@ const viewabilityConfig = {
 };
 
 const MIN_FLING_VELOCITY = 500;
+
+/** Sub-pixel difference between the list width and a page slot is still the same page. */
+const PAGE_GEOMETRY_TOLERANCE = 1;
+
+type ScrollNode = {
+    scrollLeft?: number;
+    clientWidth?: number;
+    getScrollableNode?: () => ScrollNode | null;
+    getNativeScrollRef?: () => ScrollNode | null;
+    getScrollResponder?: () => ScrollNode | null;
+};
+
+function isScrollNode(value: unknown): value is ScrollNode {
+    return value !== null && typeof value === 'object';
+}
+
+/** The DOM node the web list scrolls, where a viewability sample's width and offset can be checked. */
+function readScrollGeometry(list: unknown): {scrollLeft: number | null; clientWidth: number | null} {
+    if (!isScrollNode(list)) {
+        return {scrollLeft: null, clientWidth: null};
+    }
+    const node = list.getScrollableNode?.() ?? list.getNativeScrollRef?.() ?? list.getScrollResponder?.()?.getScrollableNode?.() ?? list;
+    if (!isScrollNode(node)) {
+        return {scrollLeft: null, clientWidth: null};
+    }
+    return {
+        scrollLeft: typeof node.scrollLeft === 'number' ? node.scrollLeft : null,
+        clientWidth: typeof node.clientWidth === 'number' ? node.clientWidth : null,
+    };
+}
+
+/**
+ * Safari rotation reports a sample while the list width and the page width still disagree.
+ * A 95% visible item is a real page once those widths match. The scroll offset is not checked:
+ * the list moves that offset itself, and reading it rejects an arrow or swipe that already landed.
+ */
+function isViewablePageSettled(list: unknown, cellWidth: number): boolean {
+    if (cellWidth <= 0) {
+        return false;
+    }
+    const {clientWidth} = readScrollGeometry(list);
+    if (clientWidth == null) {
+        return true;
+    }
+    return Math.abs(clientWidth - cellWidth) <= PAGE_GEOMETRY_TOLERANCE;
+}
 
 type DeviceAwareGestureDetectorProps = {
     canUseTouchScreen: boolean;
@@ -83,33 +129,57 @@ function AttachmentCarouselView({
     const modalStyles = styles.centeredModalStyles(shouldUseNarrowLayout, true);
     const {windowWidth} = useWindowDimensions();
 
-    const cellWidth = PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2);
+    const fallbackCellWidth = PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2);
+    const [listWidth, setListWidth] = useState(0);
+    // windowWidth ignores Safari's landscape safe area, so a page sized from it is wider than the list and never reaches 95% visible.
+    const cellWidth = listWidth > 0 ? listWidth : fallbackCellWidth;
 
-    /** Updates the page state when the user navigates between attachments */
-    const updatePage = ({viewableItems}: UpdatePageProps) => {
+    const pageRef = useRef(page);
+    const cellWidthRef = useRef(cellWidth);
+    const setPageRef = useRef(setPage);
+    const onNavigateRef = useRef(onNavigate);
+    useEffect(() => {
+        pageRef.current = page;
+        cellWidthRef.current = cellWidth;
+        setPageRef.current = setPage;
+        onNavigateRef.current = onNavigate;
+    }, [cellWidth, onNavigate, page, setPage]);
+
+    // FlatList keeps the first onViewableItemsChanged, so the callback reads the refs above.
+    const [onViewableItemsChanged] = useState(() => ({viewableItems}: UpdatePageProps) => {
         if (isFullScreenRef.current) {
             return;
         }
 
-        Keyboard.dismiss();
-
-        // Since we can have only one item in view at a time, we can use the first item in the array
-        // to get the index of the current page
         const entry = viewableItems.at(0);
-        if (!entry) {
-            setActiveAttachmentID(null);
+        const index = entry?.index;
+        // An empty or same-page sample is a layout pass. Clearing focus here unmounts the password form.
+        if (!entry || index == null || index === pageRef.current) {
+            return;
+        }
+        if (!isViewablePageSettled(scrollRef.current, cellWidthRef.current)) {
             return;
         }
 
-        const item = entry.item;
-        if (entry.index != null) {
-            setPage(entry.index);
-            setActiveAttachmentID(item.attachmentID ?? item.source);
+        Keyboard.dismiss();
+        pageRef.current = index;
+        setPageRef.current(index);
+        setActiveAttachmentID(entry.item.attachmentID ?? entry.item.source);
+        onNavigateRef.current?.(entry.item);
+    });
+
+    const handleListLayout = (event: LayoutChangeEvent) => {
+        const nextWidth = PixelRatio.roundToNearestPixel(event.nativeEvent.layout.width);
+        if (nextWidth <= 0 || nextWidth === listWidth) {
+            return;
         }
 
-        if (onNavigate) {
-            onNavigate(item);
+        // Correct the offset before the width state update paints pages at the new size.
+        cellWidthRef.current = nextWidth;
+        if (page >= 0) {
+            scrollRef.current?.scrollToOffset({offset: page * nextWidth, animated: false});
         }
+        setListWidth(nextWidth);
     };
 
     /** Increments or decrements the index to get another selected item, returning whether the carousel moved */
@@ -205,8 +275,8 @@ function AttachmentCarouselView({
         </View>
     );
 
-    // Scroll position is affected when window width is resized, so we readjust it on width changes
-    useEffect(() => {
+    // A width change leaves the old pixel offset in place. Realign before paint, or viewability reads that offset as another attachment.
+    useLayoutEffect(() => {
         if (attachments.length === 0 || scrollRef.current == null) {
             return;
         }
@@ -262,7 +332,8 @@ function AttachmentCarouselView({
                                     getItemLayout={getItemLayout}
                                     keyExtractor={extractItemKey}
                                     viewabilityConfig={viewabilityConfig}
-                                    onViewableItemsChanged={updatePage}
+                                    onViewableItemsChanged={onViewableItemsChanged}
+                                    onLayout={handleListLayout}
                                 />
                             </DeviceAwareGestureDetector>
                         </AttachmentCarouselPagerActionsContext.Provider>

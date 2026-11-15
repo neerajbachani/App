@@ -12,6 +12,7 @@ import useThemeStyles from '@hooks/useThemeStyles';
 import useWindowDimensions from '@hooks/useWindowDimensions';
 
 import {openTravelDotLink} from '@libs/openTravelDotLink';
+import shouldDisableAttachmentModalKeyboardAvoidance from '@libs/shouldDisableAttachmentModalKeyboardAvoidance';
 import {getRelativeUrl, isTravelLink} from '@libs/TravelUtils';
 
 import CONST from '@src/CONST';
@@ -46,7 +47,19 @@ import PDFPasswordForm from './PDFPasswordForm';
 const LOADING_THUMBNAIL_HEIGHT = 250;
 const LOADING_THUMBNAIL_WIDTH = 250;
 
-function PDFView({onToggleKeyboard, onLoadComplete, fileName, onPress, isFocused, onScaleChanged, sourceURL, onLoadError, isUsedAsChatAttachment}: PDFViewNativeProps) {
+function PDFView({
+    onToggleKeyboard,
+    onLoadComplete,
+    fileName,
+    onPress,
+    isFocused,
+    onScaleChanged,
+    sourceURL,
+    onLoadError,
+    isUsedAsChatAttachment,
+    isUsedInAttachmentModal,
+}: PDFViewNativeProps) {
+    const shouldAvoidPasswordKeyboard = !!isUsedInAttachmentModal && shouldDisableAttachmentModalKeyboardAvoidance;
     const [shouldRequestPassword, setShouldRequestPassword] = useState(false);
     const [shouldAttemptPDFLoad, setShouldAttemptPDFLoad] = useState(true);
     const [shouldShowLoadingIndicator, setShouldShowLoadingIndicator] = useState(true);
@@ -193,7 +206,13 @@ function PDFView({onToggleKeyboard, onLoadComplete, fileName, onPress, isFocused
                     />
                 )}
                 {shouldRequestPassword && (
-                    <KeyboardAvoidingView style={themeStyles.flex1}>
+                    <KeyboardAvoidingView
+                        // The attachment screen no longer pads on iOS, so the form pads itself. automaticOffset
+                        // measures the form in the window, or Confirm stays under the keyboard by the modal header.
+                        behavior={shouldAvoidPasswordKeyboard ? 'padding' : undefined}
+                        automaticOffset={shouldAvoidPasswordKeyboard || undefined}
+                        style={themeStyles.flex1}
+                    >
                         <PDFPasswordForm
                             isFocused={!!isFocused}
                             onSubmit={attemptPDFLoadWithPassword}
