@@ -4,11 +4,14 @@ import Text from '@components/Text';
 import TextInput from '@components/TextInput';
 import type {BaseTextInputRef} from '@components/TextInput/BaseTextInput/types';
 
+import useKeyboardState from '@hooks/useKeyboardState';
 import useLocalize from '@hooks/useLocalize';
 import useResponsiveLayout from '@hooks/useResponsiveLayout';
+import useStyleUtils from '@hooks/useStyleUtils';
 import useThemeStyles from '@hooks/useThemeStyles';
 
 import {getBrowser} from '@libs/Browser';
+import shouldDisableAttachmentModalKeyboardAvoidance from '@libs/shouldDisableAttachmentModalKeyboardAvoidance';
 
 import CONST from '@src/CONST';
 import type {TranslationPaths} from '@src/languages/types';
@@ -39,6 +42,8 @@ type PDFPasswordFormProps = {
 
 function PDFPasswordForm({isFocused, isPasswordInvalid = false, shouldShowLoadingIndicator = false, onSubmit, onPasswordUpdated, onPasswordFieldFocused}: PDFPasswordFormProps) {
     const styles = useThemeStyles();
+    const StyleUtils = useStyleUtils();
+    const {keyboardHeight} = useKeyboardState();
     const {shouldUseNarrowLayout} = useResponsiveLayout();
     const {translate} = useLocalize();
 
@@ -107,7 +112,8 @@ function PDFPasswordForm({isFocused, isPasswordInvalid = false, shouldShowLoadin
         <ScrollView
             keyboardShouldPersistTaps="handled"
             style={styles.getPDFPasswordFormStyle(shouldUseNarrowLayout)}
-            contentContainerStyle={styles.p5}
+            // Keyboard height is content padding, not a pager resize, so Confirm can scroll above the landscape keyboard.
+            contentContainerStyle={shouldDisableAttachmentModalKeyboardAvoidance ? [styles.p5, StyleUtils.getPaddingBottom(keyboardHeight)] : styles.p5}
         >
             <View style={styles.mb4}>
                 <Text>{translate('attachmentView.pdfPasswordForm.formLabel')}</Text>

@@ -24,7 +24,7 @@ import CONST from '@src/CONST';
 import type {ListRenderItemInfo} from 'react-native';
 import type {PanGesture} from 'react-native-gesture-handler';
 
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {Keyboard, PixelRatio, View} from 'react-native';
 import {GestureDetector, usePanGesture} from 'react-native-gesture-handler';
 import Animated, {scrollTo, useAnimatedRef, useSharedValue} from 'react-native-reanimated';
@@ -85,38 +85,55 @@ function AttachmentCarouselView({
 
     const cellWidth = PixelRatio.roundToNearestPixel(windowWidth - (modalStyles.marginHorizontal + modalStyles.borderWidth) * 2);
 
+    const pageRef = useRef(page);
+    // Rotation changes the cell width and FlatList reports whatever item now overlaps the old offset.
+    // That report is not a swipe. Applying it dismisses the keyboard and navigates away from the PDF.
+    const isRestoringPageAfterResize = useRef(false);
+    const previousCellWidthRef = useRef(cellWidth);
     /** Updates the page state when the user navigates between attachments */
     const updatePage = ({viewableItems}: UpdatePageProps) => {
         if (isFullScreenRef.current) {
             return;
         }
 
-        Keyboard.dismiss();
-
-        // Since we can have only one item in view at a time, we can use the first item in the array
-        // to get the index of the current page
         const entry = viewableItems.at(0);
+        if (isRestoringPageAfterResize.current) {
+            if (entry?.index === pageRef.current) {
+                isRestoringPageAfterResize.current = false;
+            }
+            return;
+        }
+
+        // An empty report means the list has not settled. Clearing focus here unmounts the password form.
         if (!entry) {
-            setActiveAttachmentID(null);
             return;
         }
 
         const item = entry.item;
         if (entry.index != null) {
+            if (entry.index === pageRef.current) {
+                return;
+            }
+
+            Keyboard.dismiss();
+            pageRef.current = entry.index;
             setPage(entry.index);
             setActiveAttachmentID(item.attachmentID ?? item.source);
         }
 
-        if (onNavigate) {
-            onNavigate(item);
-        }
+        onNavigate?.(item);
     };
 
+    useEffect(() => {
+        pageRef.current = page;
+    }, [page]);
     /** Increments or decrements the index to get another selected item, returning whether the carousel moved */
     const cycleThroughAttachments = (deltaSlide: number) => {
         if (isFullScreen) {
             return false;
         }
+
+        isRestoringPageAfterResize.current = false;
 
         const nextIndex = page + deltaSlide;
         const nextItem = attachments.at(nextIndex);
@@ -143,6 +160,10 @@ function AttachmentCarouselView({
     const pan = usePanGesture({
         enabled: canUseTouchScreen,
         onUpdate: ({translationX}) => {
+            if (translationX !== 0) {
+                isRestoringPageAfterResize.current = false;
+            }
+
             if (!isScrollEnabled.get()) {
                 return;
             }
@@ -205,17 +226,34 @@ function AttachmentCarouselView({
         </View>
     );
 
-    // Scroll position is affected when window width is resized, so we readjust it on width changes
+    // The old pixel offset no longer addresses the current page once the cell width changes.
     useEffect(() => {
-        if (attachments.length === 0 || scrollRef.current == null) {
+        if (previousCellWidthRef.current === cellWidth) {
+            return;
+        }
+        previousCellWidthRef.current = cellWidth;
+        isRestoringPageAfterResize.current = true;
+        if (attachments.length === 0 || scrollRef.current == null || page < 0) {
             return;
         }
 
         scrollRef.current.scrollToIndex({index: page, animated: false});
-        // The hook is not supposed to run on page change, so we keep the page out of the dependencies
+        // Page is read from this render. A later page change must not scroll again.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [cellWidth]);
 
+    // FlatList can report a new page after the browser resize and before this component renders the new cell width.
+    useEffect(() => {
+        const markResize = () => {
+            isRestoringPageAfterResize.current = true;
+        };
+        window.addEventListener('resize', markResize);
+        window.addEventListener('orientationchange', markResize);
+        return () => {
+            window.removeEventListener('resize', markResize);
+            window.removeEventListener('orientationchange', markResize);
+        };
+    }, []);
     return (
         <View
             style={[styles.flex1, styles.attachmentCarouselContainer]}

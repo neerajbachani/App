@@ -2,6 +2,7 @@ import ScreenWrapper from '@components/ScreenWrapper';
 
 import attachmentModalHandler from '@libs/AttachmentModalHandler';
 import Navigation from '@libs/Navigation/Navigation';
+import shouldDisableAttachmentModalKeyboardAvoidance from '@libs/shouldDisableAttachmentModalKeyboardAvoidance';
 
 import AttachmentModalBaseContent from '@pages/media/AttachmentModalScreen/AttachmentModalBaseContent';
 import AttachmentStateContextProvider from '@pages/media/AttachmentModalScreen/AttachmentModalBaseContent/AttachmentStateContextProvider';
@@ -56,6 +57,7 @@ function AttachmentModalContainer<Screen extends AttachmentModalScreenType>({con
             navigation={navigation}
             testID={`attachment-modal-${testID}`}
             enableEdgeToEdgeBottomSafeAreaPadding
+            shouldEnableKeyboardAvoidingView={!shouldDisableAttachmentModalKeyboardAvoidance}
         >
             <AttachmentStateContextProvider>
                 <AttachmentModalBaseContent
